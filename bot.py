@@ -29,8 +29,8 @@ ADMIN_ID = 7799287060
 BOT_VERSION = "8.0.0"
 DEFAULT_DAILY_LIMIT = 5
 
-VODAFONE_NUMBER = "01040757693"
-INSTAPAY_NUMBER = "01128085081"
+VODAFONE_NUMBER = "01131384851"
+INSTAPAY_NUMBER = "غير متاح في الوقت الحالي"
 AMMER_PAY_API_KEY = "5775769170:LIVE:TG_LgpGu_wx9zf4gv6tdgdBYZ0A"
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
