@@ -23,14 +23,18 @@ from telegram.ext import (
 TOKEN = "8606881282:AAFUnul-fEQI2Y6JPnCFV9dxTDaV8n0onT4"
 ADMIN_USERNAME = "@Mac_0980"
 BOT_USERNAME = "ShamelDownloaderBot"
-ADMIN_ID = 7799287060          # ضع معرف المشرف الصحيح
+ADMIN_ID = 7799287060          # ضع معرف المشرف الصحيح (الرقم الخاص بحساب @Mac_0980)
 
-BOT_VERSION = "4.2.0"
+BOT_VERSION = "5.0.0"
 DEFAULT_DAILY_LIMIT = 5
 
-# ======================== إعدادات الدفع الجديدة ========================
+# ======================== إعدادات الدفع ========================
 VODAFONE_NUMBER = "01040757693"
 INSTAPAY_NUMBER = "01128085081"
+
+# مفتاح Ammer Pay (تم إضافته كما طلبت)
+AMMER_PAY_API_KEY = "5775769170:LIVE:TG_LgpGu_wx9zf4gv6tdgdBYZ0A"
+# سيتم استخدامه لاحقاً إذا أردت تفعيل الدفع التلقائي عبر Ammer Pay
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -42,7 +46,7 @@ DOWNLOAD_DIR = "downloads"
 if not os.path.exists(DOWNLOAD_DIR):
     os.makedirs(DOWNLOAD_DIR)
 
-# ======================== قاعدة البيانات ========================
+# ======================== قاعدة البيانات (SQLite) ========================
 conn = sqlite3.connect("bot_data.db", check_same_thread=False)
 c = conn.cursor()
 
@@ -124,7 +128,7 @@ def activate_vip(user_id: int, days: int):
     c.execute("INSERT OR REPLACE INTO vip (user_id, expiry_date) VALUES (?, ?)", (user_id, expiry))
     conn.commit()
 
-# ======================== الإعلانات للمستخدم المجاني ========================
+# ======================== الإعلانات ========================
 ADVERTISEMENTS = [
     f"📢 اشترك في قناتنا @YourChannel للحصول على بوتات حصرية",
     f"⭐ باقات VIP تبدأ من 1$ فقط أسبوعياً، تواصل مع {ADMIN_USERNAME}",
@@ -225,7 +229,7 @@ async def start(update: Update, context):
     )
     await update.message.reply_text(text, parse_mode="Markdown", reply_markup=await main_menu())
 
-# ======================== أزرار القائمة الرئيسية ========================
+# ======================== أزرار القائمة ========================
 async def menu_download(update: Update, context):
     q = update.callback_query
     await q.answer()
@@ -250,6 +254,7 @@ async def menu_usage(update: Update, context):
     await q.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="back")]]))
 
 async def menu_vip(update: Update, context):
+    """عرض باقات VIP وزر طرق الدفع"""
     q = update.callback_query
     await q.answer()
     uid = q.from_user.id
@@ -320,8 +325,9 @@ async def back(update: Update, context):
     await q.answer()
     await q.edit_message_text("🏠 **القائمة الرئيسية**", reply_markup=await main_menu(), parse_mode="Markdown")
 
-# ======================== لوحة الدفع الاحترافية ========================
+# ======================== لوحة الدفع الاحترافية (العمل الأساسي) ========================
 async def vip_payment_menu(update: Update, context):
+    """هذه هي الدالة التي تظهر عند الضغط على 💳 طرق الدفع"""
     q = update.callback_query
     await q.answer()
     keyboard = [
@@ -379,7 +385,7 @@ async def pay_vodafone(update: Update, context):
         f"🔹 **رقم الحساب:** `{VODAFONE_NUMBER}`\n"
         "🔹 **الاسم:** أحمد محمد\n\n"
         "💸 **المطلوب:** `1$` قيمة الاشتراك الأسبوعي\n\n"
-        "📌 **بعد التحويل**، اضغط الزر أدناه لرفع صورة الإيصال مع معرفك التلقائي.\n"
+        "📌 **بعد التحويل**، اضغط الزر أدناه لرفع صورة الإيصال.\n"
         "🕒 سيتم التفعيل خلال 24 ساعة.\n\n"
         f"للاستفسار: {ADMIN_USERNAME}"
     )
@@ -395,25 +401,24 @@ async def pay_instapay(update: Update, context):
         f"🔹 **رقم الهاتف:** `{INSTAPAY_NUMBER}`\n"
         "🔹 **الاسم:** أحمد محمد\n\n"
         "💸 **المطلوب:** `1$` أو ما يعادله بالجنيه\n\n"
-        "📌 **بعد التحويل**، اضغط الزر أدناه لرفع صورة الإيصال مع معرفك التلقائي.\n"
+        "📌 **بعد التحويل**، اضغط الزر أدناه لرفع صورة الإيصال.\n"
         "🕒 سيتم التفعيل خلال 24 ساعة.\n\n"
         f"للاستفسار: {ADMIN_USERNAME}"
     )
     keyboard = [[InlineKeyboardButton("📸 إرسال إيصال الدفع", callback_data="send_receipt_instapay")]]
     await q.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# ========== معالج رفع الإيصال (لأي طريقة يدوية) ==========
+# ========== معالج رفع الإيصال ==========
 async def request_receipt(update: Update, context, method: str):
     q = update.callback_query
     await q.answer()
-    # نطلب من المستخدم رفع الصورة
     context.user_data["payment_method"] = method
     await q.edit_message_text(
         f"📸 **أرسل صورة الإيصال الآن**\n\n"
         f"- طريقة الدفع: {method}\n"
-        f"- سيتم إرسال معرفك ({update.effective_user.id}) تلقائياً مع الصورة للمشرف.\n\n"
-        "⚠️ تأكد من أن الصورة واضحة وتظهر عملية التحويل.\n"
-        "🕒 سيتم التفعيل خلال 24 ساعة بعد استلام الإيصال.",
+        f"- سيتم إرسال معرفك ({update.effective_user.id}) تلقائياً للمشرف.\n\n"
+        "⚠️ تأكد من أن الصورة واضحة.\n"
+        "🕒 سيتم التفعيل خلال 24 ساعة.",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 إلغاء", callback_data="vip_payment_menu")]])
     )
@@ -424,19 +429,17 @@ async def send_receipt_vodafone(update: Update, context):
 async def send_receipt_instapay(update: Update, context):
     await request_receipt(update, context, "إنستا باي")
 
-# ========== استقبال صورة الإيصال من المستخدم ==========
+# ========== استقبال صورة الإيصال ==========
 async def handle_receipt_photo(update: Update, context):
     user = update.effective_user
     user_id = user.id
     user_name = user.username or user.first_name or "لا يوجد"
     method = context.user_data.get("payment_method", "غير محدد")
 
-    # الحصول على الصورة
     photo_file = await update.message.photo[-1].get_file()
     photo_path = f"receipt_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
     await photo_file.download_to_drive(photo_path)
 
-    # إرسال إشعار للمشرف مع الصورة والبيانات
     caption = (
         f"🧾 **طلب تفعيل VIP - إيصال دفع**\n\n"
         f"👤 **المستخدم:** [{user_name}](tg://user?id={user_id})\n"
@@ -446,23 +449,15 @@ async def handle_receipt_photo(update: Update, context):
         f"✅ **لتفعيل VIP استخدم:** `/activate_vip {user_id} 7`"
     )
     with open(photo_path, "rb") as photo:
-        await context.bot.send_photo(
-            chat_id=ADMIN_ID,
-            photo=photo,
-            caption=caption,
-            parse_mode="Markdown"
-        )
-    # حذف الصورة من الخادم بعد الإرسال
+        await context.bot.send_photo(chat_id=ADMIN_ID, photo=photo, caption=caption, parse_mode="Markdown")
     os.remove(photo_path)
 
-    # تأكيد للمستخدم
     await update.message.reply_text(
         "✅ **تم استلام إيصالك بنجاح!**\n"
-        "سيتواصل معك المشرف بعد التحقق من الدفع وتفعيل اشتراكك.\n"
+        "سيتم إعلامك بعد التفعيل.\n"
         f"للاستفسار: {ADMIN_USERNAME}",
         parse_mode="Markdown"
     )
-    # تنظيف
     context.user_data.pop("payment_method", None)
 
 # ======================== معالج الروابط وجودة التحميل ========================
@@ -539,9 +534,8 @@ async def activate_vip(update: Update, context):
     try:
         user_id = int(context.args[0])
         days = int(context.args[1])
-        expiry = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
         activate_vip(user_id, days)
-        await update.message.reply_text(f"✅ تم تفعيل VIP للمستخدم {user_id} لمدة {days} يوماً (ينتهي {expiry})")
+        await update.message.reply_text(f"✅ تم تفعيل VIP للمستخدم {user_id} لمدة {days} يوماً.")
     except:
         await update.message.reply_text("⚠️ الاستخدام: `/activate_vip <user_id> <أيام>`", parse_mode="Markdown")
 
@@ -570,7 +564,7 @@ def main():
     app.add_handler(CommandHandler("activate_vip", activate_vip))
     app.add_handler(CommandHandler("stats", stats))
 
-    # أزرار القائمة الرئيسية
+    # أزرار القائمة
     app.add_handler(CallbackQueryHandler(menu_download, pattern="^menu_download$"))
     app.add_handler(CallbackQueryHandler(menu_usage, pattern="^menu_usage$"))
     app.add_handler(CallbackQueryHandler(menu_vip, pattern="^menu_vip$"))
