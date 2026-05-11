@@ -1,4 +1,3 @@
-```python
 import logging
 import os
 import random
@@ -127,51 +126,46 @@ async def send_ad_to_free_user(user_id: int, context: ContextTypes.DEFAULT_TYPE)
 
 
 # ======================== التعرف على المنصة ========================
-def detect_platform(url: str) -> str:
+def detect_platform(url: str) -> tuple:
+    """ترجع (نوع المنصة, هل هو لايف؟)"""
     url_lower = url.lower()
 
     if "tiktok.com" in url_lower:
-        if "/live" in url_lower:
-            return "تيك توك لايف"
-        return "تيك توك"
+        if "/live" in url_lower or "?live" in url_lower:
+            return "تيك توك", True
+        return "تيك توك", False
 
     if "facebook.com" in url_lower or "fb.watch" in url_lower:
-        return "فيسبوك"
+        return "فيسبوك", False
 
     if "twitter.com" in url_lower or "x.com" in url_lower:
-        return "تويتر"
+        return "تويتر", False
 
     if "youtube.com" in url_lower or "youtu.be" in url_lower:
-        return "يوتيوب"
+        return "يوتيوب", False
 
     if "instagram.com" in url_lower:
-        return "انستجرام"
+        return "انستجرام", False
 
-    return "غير معروف"
+    return "غير معروف", False
 
 
-# ======================== تحميل الفيديو ========================
+# ======================== تحميل الفيديو العادي ========================
 async def download_video(url: str, quality: str = "best") -> str:
-
     ydl_opts = {
-        "outtmpl": f"{DOWNLOAD_DIR}/%(title)s.%(ext)s",
+        "outtmpl": f"{DOWNLOAD_DIR}/%(title)s_%(id)s.%(ext)s",
         "quiet": True,
         "no_warnings": True,
         "format": "best" if quality == "best" else "worst",
         "noplaylist": True,
     }
 
-    if "/live" in url:
-        ydl_opts["format"] = "best"
-
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
-
         filename = ydl.prepare_filename(info)
 
         if not os.path.exists(filename):
             files = os.listdir(DOWNLOAD_DIR)
-
             if files:
                 filename = os.path.join(
                     DOWNLOAD_DIR,
@@ -180,8 +174,37 @@ async def download_video(url: str, quality: str = "best") -> str:
                         key=os.path.getctime,
                     ),
                 )
-
         return filename
+
+
+# ======================== تحميل البث المباشر (لايف) ========================
+async def download_live_tiktok(url: str) -> str:
+    """تحميل بث مباشر من تيك توك (يدعم البث الحالي والمنتهي)"""
+    ydl_opts = {
+        "outtmpl": f"{DOWNLOAD_DIR}/live_%(title)s_%(id)s.%(ext)s",
+        "quiet": True,
+        "no_warnings": True,
+        "format": "best",
+        "live_from_start": True,          # يحاول التحميل من بداية البث
+        "wait_for_video": False,          # لا ينتظر إذا لم يبدأ البث
+        "noplaylist": True,
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            filename = ydl.prepare_filename(info)
+            if not os.path.exists(filename):
+                files = os.listdir(DOWNLOAD_DIR)
+                if files:
+                    filename = os.path.join(
+                        DOWNLOAD_DIR,
+                        max([os.path.join(DOWNLOAD_DIR, f) for f in files], key=os.path.getctime),
+                    )
+            return filename
+    except Exception as e:
+        # إذا فشل التحميل كلايف، نحاول كفيديو عادي
+        logger.warning(f"فشل تحميل اللايف، نحاول كفيديو عادي: {e}")
+        return await download_video(url, "best")
 
 
 # ======================== القائمة الرئيسية ========================
@@ -198,27 +221,20 @@ async def get_main_menu():
         ],
         [InlineKeyboardButton("ℹ️ معلومات البوت", callback_data="main_info")]
     ]
-
     return InlineKeyboardMarkup(keyboard)
 
 
 # ======================== START ========================
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     user = update.effective_user
-
     welcome_text = (
         f"🎬 أهلاً {user.first_name} في بوت التحميل الشامل\n\n"
         "📥 أرسل أي رابط فيديو وسيتم تحميله فوراً.\n\n"
-        "✅ تيك توك\n"
-        "✅ تيك توك لايف\n"
-        "✅ يوتيوب\n"
-        "✅ تويتر\n"
-        "✅ فيسبوك\n"
-        "✅ انستجرام\n\n"
-        "⭐ المجاني: 5 تحميلات يومياً"
+        "✅ تيك توك (عادي + لايف)\n"
+        "✅ يوتيوب\n✅ تويتر\n✅ فيسبوك\n✅ انستجرام\n\n"
+        f"⭐ المجاني: 5 تحميلات يومياً\n\n"
+        "استخدم الأزرار أدناه:"
     )
-
     await update.message.reply_text(
         welcome_text,
         reply_markup=await get_main_menu()
@@ -228,9 +244,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ======================== معلومات البوت ========================
 async def main_info_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-
     await query.answer()
-
     text = (
         "ℹ️ **معلومات البوت** ℹ️\n\n"
         f"🤖 الاسم: @{BOT_USERNAME}\n"
@@ -239,15 +253,11 @@ async def main_info_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "🐍 البرمجة: Python + python-telegram-bot\n"
         "☁️ الاستضافة: Railway 24/7\n"
         "📥 يدعم تحميل:\n"
-        "• تيك توك\n"
-        "• تيك توك لايف\n"
-        "• يوتيوب\n"
-        "• تويتر / X\n"
-        "• فيسبوك\n"
-        "• انستجرام\n\n"
+        "• تيك توك (عادي + لايف)\n"
+        "• يوتيوب\n• تويتر / X\n"
+        "• فيسبوك\n• انستجرام\n\n"
         "⭐ VIP = تحميل غير محدود + بدون إعلانات"
     )
-
     await query.edit_message_text(
         text=text,
         parse_mode="Markdown",
@@ -259,21 +269,14 @@ async def main_info_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 # ======================== المنصات ========================
 async def main_supported_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     query = update.callback_query
-
     await query.answer()
-
     text = (
         "🌐 **المنصات المدعومة بالكامل** 🌐\n\n"
-        "• تيك توك\n"
-        "• تيك توك لايف\n"
-        "• فيسبوك\n"
-        "• تويتر / X\n"
-        "• يوتيوب\n"
-        "• انستجرام\n"
+        "• تيك توك (عادي + لايف)\n"
+        "• يوتيوب\n• تويتر / X\n"
+        "• فيسبوك\n• انستجرام\n"
     )
-
     await query.edit_message_text(
         text,
         parse_mode="Markdown",
@@ -285,21 +288,26 @@ async def main_supported_callback(update: Update, context: ContextTypes.DEFAULT_
 
 # ======================== VIP ========================
 async def main_vip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     query = update.callback_query
-
     await query.answer()
-
-    text = (
-        "⭐ VIP\n\n"
-        "• تحميل غير محدود\n"
-        "• بدون إعلانات\n"
-        "• سرعة أعلى\n\n"
-        f"للتفعيل تواصل مع {ADMIN_USERNAME}"
-    )
-
+    user_id = query.from_user.id
+    if is_vip(user_id):
+        c.execute("SELECT expiry_date FROM vip WHERE user_id=?", (user_id,))
+        expiry = c.fetchone()[0]
+        text = f"✅ أنت مشترك VIP حتى {expiry}"
+    else:
+        text = (
+            "⭐ **باقات VIP** ⭐\n\n"
+            "• أسبوعي: 1$\n• شهري: 3$\n• سنوي: 25$\n\n"
+            "💳 طرق الدفع:\n"
+            "⭐ نجوم تليجرام\n"
+            "📱 فودافون كاش: 0123456789\n"
+            "🏦 إنستا باي: instapay@example.com\n\n"
+            f"📩 بعد الدفع أرسل الإيصال إلى {ADMIN_USERNAME}"
+        )
     await query.edit_message_text(
         text,
+        parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🔙 رجوع", callback_data="main_back")]
         ])
@@ -308,20 +316,15 @@ async def main_vip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ======================== الاستخدام ========================
 async def main_usage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     query = update.callback_query
-
     await query.answer()
-
     user_id = query.from_user.id
-
     if is_vip(user_id):
-        text = "⭐ أنت مشترك VIP بدون حدود."
+        text = "⭐ أنت مشترك VIP – بدون حدود."
     else:
         used = get_daily_downloads(user_id)
-
-        text = f"📊 استخدمت {used}/5 تحميلات اليوم."
-
+        remain = 5 - used
+        text = f"📊 استخدمت {used}/5 تحميلات اليوم.\nمتبقي: {remain}"
     await query.edit_message_text(
         text,
         reply_markup=InlineKeyboardMarkup([
@@ -332,18 +335,18 @@ async def main_usage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 # ======================== السياسة ========================
 async def main_policy_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     query = update.callback_query
-
     await query.answer()
-
     text = (
-        "⚖️ استخدم البوت بشكل قانوني.\n"
-        "المستخدم مسؤول عن أي محتوى يقوم بتحميله."
+        "⚖️ **سياسة الاستخدام** ⚖️\n\n"
+        "• المستخدم مسؤول وحيد عن المحتوى.\n"
+        "• لا يتم تخزين الملفات بعد الإرسال.\n"
+        "• حقوق النشر محفوظة لأصحابها.\n"
+        f"• للشكاوى: {ADMIN_USERNAME}"
     )
-
     await query.edit_message_text(
         text,
+        parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🔙 رجوع", callback_data="main_back")]
         ])
@@ -352,152 +355,167 @@ async def main_policy_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
 # ======================== الرجوع ========================
 async def main_back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     query = update.callback_query
-
     await query.answer()
-
     await query.edit_message_text(
         "🏠 القائمة الرئيسية",
         reply_markup=await get_main_menu()
     )
 
 
-# ======================== تحميل الفيديو ========================
+# ======================== طلب تحميل فيديو (زر في القائمة) ========================
+async def main_download_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "📥 **أرسل رابط الفيديو الآن**\nمثال: `https://www.tiktok.com/@user/video/123456`\n\nلإلغاء العملية، اضغط /start",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 رجوع", callback_data="main_back")]
+        ])
+    )
+
+
+# ======================== معالج الروابط وجودة التحميل ========================
 async def handle_any_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     user_id = update.effective_user.id
-
     url = update.message.text.strip()
-
-    platform = detect_platform(url)
+    platform, is_live = detect_platform(url)
 
     if platform == "غير معروف":
         await update.message.reply_text("❌ الرابط غير مدعوم.")
         return
 
     if not can_download(user_id):
-        await update.message.reply_text("⚠️ وصلت للحد اليومي.")
+        await update.message.reply_text("⚠️ لقد استنفدت حد التحميلات اليومي (5/5). اشترك في VIP للتحميل غير المحدود.")
         return
 
-    quality_keyboard = [
-        [InlineKeyboardButton("🎥 جودة عالية", callback_data=f"download_best|{url}")],
-        [InlineKeyboardButton("📱 جودة منخفضة", callback_data=f"download_worst|{url}")]
-    ]
+    # تخزين الرابط في user_data
+    context.user_data["pending_url"] = url
+    context.user_data["is_live"] = is_live
 
-    await update.message.reply_text(
-        f"📌 المنصة: {platform}\nاختر الجودة:",
-        reply_markup=InlineKeyboardMarkup(quality_keyboard)
-    )
+    # أزرار اختيار الجودة (للفيديو العادي) أو زر تحميل اللايف
+    if is_live:
+        keyboard = [
+            [InlineKeyboardButton("📡 تحميل البث المباشر", callback_data="download_live")],
+            [InlineKeyboardButton("🔙 إلغاء", callback_data="download_cancel")],
+        ]
+        await update.message.reply_text(
+            f"🎥 **منصة: {platform} (بث مباشر)**\n"
+            "سيتم محاولة تحميل البث منذ بدايته (إن كان لا يزال يُبث أو متوفراً كمسجل).\n"
+            "اضغط الزر لبدء التحميل:",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    else:
+        keyboard = [
+            [InlineKeyboardButton("🎥 جودة عالية", callback_data="download_best")],
+            [InlineKeyboardButton("📱 جودة منخفضة", callback_data="download_worst")],
+            [InlineKeyboardButton("🔙 إلغاء", callback_data="download_cancel")],
+        ]
+        await update.message.reply_text(
+            f"📌 **المنصة:** {platform}\nاختر جودة التحميل:",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
 
 
-# ======================== اختيار الجودة ========================
 async def quality_selection_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     query = update.callback_query
-
     await query.answer()
+    user_id = query.from_user.id
 
-    data = query.data.split("|")
+    action = query.data
 
-    quality = data[0].replace("download_", "")
-    url = data[1]
+    if action == "download_cancel":
+        await query.edit_message_text("❌ تم إلغاء عملية التحميل.")
+        context.user_data.pop("pending_url", None)
+        context.user_data.pop("is_live", None)
+        return
 
+    url = context.user_data.get("pending_url")
+    if not url:
+        await query.edit_message_text("⚠️ انتهت صلاحية الرابط، أرسله مرة أخرى.")
+        return
+
+    if not can_download(user_id):
+        await query.edit_message_text("⚠️ تجاوزت حد التحميل اليومي.")
+        return
+
+    # تحميل لايف
+    if action == "download_live":
+        await query.edit_message_text("⏳ جاري تحميل البث المباشر... قد يستغرق وقتاً طويلاً حسب طول البث.")
+        try:
+            file_path = await download_live_tiktok(url)
+            with open(file_path, "rb") as vid:
+                await query.message.reply_video(
+                    video=vid,
+                    caption="✅ تم تحميل البث المباشر بنجاح!"
+                )
+            os.remove(file_path)
+            increment_daily_downloads(user_id)
+            await send_ad_to_free_user(user_id, context)
+        except Exception as e:
+            logger.error(f"خطأ في تحميل اللايف: {e}")
+            await query.message.reply_text(f"❌ فشل تحميل البث المباشر:\n{str(e)[:100]}")
+        finally:
+            context.user_data.pop("pending_url", None)
+            context.user_data.pop("is_live", None)
+        return
+
+    # تحميل فيديو عادي مع جودة
+    quality = "best" if action == "download_best" else "worst"
     await query.edit_message_text("⏳ جاري التحميل...")
 
     try:
         file_path = await download_video(url, quality)
-
         with open(file_path, "rb") as video:
-
             await query.message.reply_video(
                 video=video,
                 caption="✅ تم التحميل بنجاح"
             )
-
         os.remove(file_path)
-
-        increment_daily_downloads(query.from_user.id)
-
-        await send_ad_to_free_user(query.from_user.id, context)
-
+        increment_daily_downloads(user_id)
+        await send_ad_to_free_user(user_id, context)
     except Exception as e:
-
         logger.error(e)
+        await query.message.reply_text(f"❌ فشل التحميل:\n{str(e)[:100]}")
+    finally:
+        context.user_data.pop("pending_url", None)
+        context.user_data.pop("is_live", None)
 
-        await query.message.reply_text(
-            f"❌ فشل التحميل:\n{str(e)}"
-        )
+
+# ======================== أمر VIP تجريبي ========================
+async def test_vip_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    expiry = (datetime.now() + timedelta(hours=1)).strftime("%Y-%m-%d")
+    c.execute("INSERT OR REPLACE INTO vip (user_id, expiry_date) VALUES (?, ?)", (user_id, expiry))
+    conn.commit()
+    await update.message.reply_text("✅ تم تفعيل VIP تجريبي لمدة ساعة (للاختبار).")
 
 
 # ======================== تشغيل البوت ========================
 def main():
-
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("activate_vip_test", test_vip_command))
 
-    app.add_handler(
-        CallbackQueryHandler(
-            main_info_callback,
-            pattern="^main_info$"
-        )
-    )
+    app.add_handler(CallbackQueryHandler(main_info_callback, pattern="^main_info$"))
+    app.add_handler(CallbackQueryHandler(main_supported_callback, pattern="^main_supported$"))
+    app.add_handler(CallbackQueryHandler(main_vip_callback, pattern="^main_vip$"))
+    app.add_handler(CallbackQueryHandler(main_usage_callback, pattern="^main_usage$"))
+    app.add_handler(CallbackQueryHandler(main_policy_callback, pattern="^main_policy$"))
+    app.add_handler(CallbackQueryHandler(main_back_callback, pattern="^main_back$"))
+    app.add_handler(CallbackQueryHandler(main_download_callback, pattern="^main_download$"))
 
-    app.add_handler(
-        CallbackQueryHandler(
-            main_supported_callback,
-            pattern="^main_supported$"
-        )
-    )
+    app.add_handler(CallbackQueryHandler(quality_selection_callback, pattern="^(download_best|download_worst|download_live|download_cancel)$"))
 
-    app.add_handler(
-        CallbackQueryHandler(
-            main_vip_callback,
-            pattern="^main_vip$"
-        )
-    )
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_any_link))
 
-    app.add_handler(
-        CallbackQueryHandler(
-            main_usage_callback,
-            pattern="^main_usage$"
-        )
-    )
-
-    app.add_handler(
-        CallbackQueryHandler(
-            main_policy_callback,
-            pattern="^main_policy$"
-        )
-    )
-
-    app.add_handler(
-        CallbackQueryHandler(
-            main_back_callback,
-            pattern="^main_back$"
-        )
-    )
-
-    app.add_handler(
-        CallbackQueryHandler(
-            quality_selection_callback,
-            pattern="^download_"
-        )
-    )
-
-    app.add_handler(
-        MessageHandler(
-            filters.TEXT & ~filters.COMMAND,
-            handle_any_link
-        )
-    )
-
-    logger.info("✅ البوت يعمل الآن")
-
+    logger.info("✅ البوت يعمل الآن مع دعم تيك توك لايف وكل الأزرار تعمل.")
     app.run_polling()
 
 
 if __name__ == "__main__":
     main()
-```
