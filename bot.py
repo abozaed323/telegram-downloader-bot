@@ -26,12 +26,11 @@ TOKEN = "8606881282:AAFUnul-fEQI2Y6JPnCFV9dxTDaV8n0onT4"
 ADMIN_USERNAME = "@Mac_0980"
 BOT_USERNAME = "ShamelDownloaderBot"
 ADMIN_ID = 7799287060
-BOT_VERSION = "7.0.0"
+BOT_VERSION = "8.0.0"
 DEFAULT_DAILY_LIMIT = 5
 
-VODAFONE_NUMBER = "01131384851"
-INSTAPAY_NUMBER = "لا يوجد حاليا"
-
+VODAFONE_NUMBER = "01040757693"
+INSTAPAY_NUMBER = "01128085081"
 AMMER_PAY_API_KEY = "5775769170:LIVE:TG_LgpGu_wx9zf4gv6tdgdBYZ0A"
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -46,9 +45,39 @@ if not os.path.exists(DOWNLOAD_DIR):
 # -------------------------------------------------------------------
 conn = sqlite3.connect("bot_data.db", check_same_thread=False)
 c = conn.cursor()
-c.execute("CREATE TABLE IF NOT EXISTS vip (user_id INTEGER PRIMARY KEY, expiry_date TEXT NOT NULL)")
-c.execute("CREATE TABLE IF NOT EXISTS daily_downloads (user_id INTEGER, date TEXT, count INTEGER, PRIMARY KEY (user_id, date))")
-c.execute("CREATE TABLE IF NOT EXISTS referrals (referrer_id INTEGER, referred_id INTEGER, date TEXT DEFAULT CURRENT_TIMESTAMP, is_activated INTEGER DEFAULT 0, PRIMARY KEY (referrer_id, referred_id))")
+
+c.execute("""
+CREATE TABLE IF NOT EXISTS vip (
+    user_id INTEGER PRIMARY KEY,
+    expiry_date TEXT NOT NULL
+)
+""")
+c.execute("""
+CREATE TABLE IF NOT EXISTS daily_downloads (
+    user_id INTEGER,
+    date TEXT,
+    count INTEGER,
+    PRIMARY KEY (user_id, date)
+)
+""")
+c.execute("""
+CREATE TABLE IF NOT EXISTS referrals (
+    referrer_id INTEGER,
+    referred_id INTEGER,
+    date TEXT DEFAULT CURRENT_TIMESTAMP,
+    is_activated INTEGER DEFAULT 0,
+    PRIMARY KEY (referrer_id, referred_id)
+)
+""")
+c.execute("""
+CREATE TABLE IF NOT EXISTS bot_users (
+    user_id INTEGER PRIMARY KEY,
+    first_seen TEXT DEFAULT CURRENT_TIMESTAMP,
+    username TEXT,
+    first_name TEXT,
+    last_seen TEXT
+)
+""")
 conn.commit()
 
 def is_vip(user_id: int) -> bool:
@@ -70,7 +99,11 @@ def get_daily_count(user_id: int) -> int:
 
 def increment_daily_count(user_id: int):
     today = datetime.now().strftime("%Y-%m-%d")
-    c.execute("INSERT INTO daily_downloads (user_id, date, count) VALUES (?, ?, 1) ON CONFLICT(user_id, date) DO UPDATE SET count = count + 1", (user_id, today))
+    c.execute(
+        "INSERT INTO daily_downloads (user_id, date, count) VALUES (?, ?, 1) "
+        "ON CONFLICT(user_id, date) DO UPDATE SET count = count + 1",
+        (user_id, today)
+    )
     conn.commit()
 
 def can_download(user_id: int) -> bool:
@@ -86,13 +119,23 @@ def activate_vip(user_id: int, days: int):
     c.execute("INSERT OR REPLACE INTO vip (user_id, expiry_date) VALUES (?, ?)", (user_id, expiry))
     conn.commit()
 
+def register_user(user_id: int, username: str = None, first_name: str = None):
+    username = username or ""
+    first_name = first_name or ""
+    c.execute(
+        "INSERT OR IGNORE INTO bot_users (user_id, username, first_name) VALUES (?, ?, ?)",
+        (user_id, username, first_name)
+    )
+    c.execute("UPDATE bot_users SET last_seen = CURRENT_TIMESTAMP WHERE user_id=?", (user_id,))
+    conn.commit()
+
 # -------------------------------------------------------------------
-# رسالة بعد التحميل (بدون Markdown معقد)
+# رسالة بعد التحميل
 # -------------------------------------------------------------------
 PROMO_MESSAGE = (
     "🎁 اشترك في قناتنا 🎁\n"
     "https://t.me/dawinlod\n\n"
-    "🔥 عرض خاص: كل من يشترك في القناة ويبلغ المشرف " + ADMIN_USERNAME + " يحصل على 5 تحميلات مجانية إضافية كهدية!\n\n"
+    "🔥 عرض خاص: كل من يشترك في القناة ويبلغ المشرف " + ADMIN_USERNAME + " يحصل على 5 تحميلات مجانية إضافية!\n\n"
     "📞 للاشتراك VIP أو الاستفسار: " + ADMIN_USERNAME
 )
 
@@ -100,7 +143,7 @@ async def send_promotion(user_id: int, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=user_id, text=PROMO_MESSAGE)
 
 # -------------------------------------------------------------------
-# تحميل الفيديو
+# تحميل الفيديو (يدعم كواي تجريبياً)
 # -------------------------------------------------------------------
 def detect_platform(url: str):
     u = url.lower()
@@ -116,6 +159,8 @@ def detect_platform(url: str):
         return "يوتيوب"
     if "instagram.com" in u:
         return "انستجرام"
+    if "kwai.com" in u or "kwaicdn.com" in u:
+        return "كواي (تجريبي)"
     return "غير معروف"
 
 async def download_video(url: str, quality: str = "best") -> str:
@@ -153,7 +198,7 @@ async def handle_referral(update: Update, context):
                 if not c.fetchone():
                     c.execute("INSERT INTO referrals (referrer_id, referred_id, is_activated) VALUES (?, ?, 0)", (referrer_id, user_id))
                     conn.commit()
-                    await update.message.reply_text("تم تسجيل إحالتك! سيحصل من دعاك على مكافأة عند تفعيل اشتراكك.")
+                    await update.message.reply_text("🎉 تم تسجيل إحالتك! سيحصل من دعاك على مكافأة عند تفعيل اشتراكك.")
         except Exception as e:
             logger.error(f"Referral error: {e}")
 
@@ -170,18 +215,20 @@ async def main_menu():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# -------------------------------------------------------------------
-# أمر /start (تم تبسيط النص وإزالة الأخطاء)
-# -------------------------------------------------------------------
 async def start(update: Update, context):
-    await handle_referral(update, context)
     user = update.effective_user
+    user_id = user.id
+    username = user.username or ""
+    first_name = user.first_name or ""
+    register_user(user_id, username, first_name)
+    await handle_referral(update, context)
+
     name = user.first_name or user.username or "صديقي"
-    remaining = get_remaining_downloads(user.id)
-    limit_text = "غير محدود" if remaining == -1 else f"متبقي {remaining} تحميلات اليوم"
+    remaining = get_remaining_downloads(user_id)
+    limit_text = "غير محدود 🚀" if remaining == -1 else f"متبقي {remaining} تحميلات اليوم"
     text = (
         f"🎬 أهلاً بك {name} في بوت التحميل الشامل 🎬\n\n"
-        "📥 أرسل رابط فيديو من:\n✅ تيك توك (فيديو أو لايف)\n✅ فيسبوك\n✅ تويتر\n✅ يوتيوب\n✅ انستجرام\n\n"
+        "📥 أرسل رابط فيديو من:\n✅ تيك توك\n✅ فيسبوك\n✅ تويتر\n✅ يوتيوب\n✅ انستجرام\n✅ كواي (تجريبي)\n\n"
         f"📊 حالتك: {limit_text}\n⭐ VIP: تحميل غير محدود + بدون إعلانات\n\n"
         f"📞 للاستفسار أو الاشتراك: {ADMIN_USERNAME}\n\nاختر من القائمة:"
     )
@@ -242,7 +289,7 @@ async def contact_admin(update: Update, context):
         f"🏦 إنستا باي: {INSTAPAY_NUMBER}\n\n"
         f"💰 المبلغ: 1$ للأسبوع، 3$ للشهر، 25$ للسنة\n\n"
         f"📌 بعد التحويل، تواصل مع المشرف {ADMIN_USERNAME} وأرسل صورة الإيصال مع معرف التليجرام الخاص بك.\n"
-        f"🕒 سيتم التفعيل خلال لحظات .\n\nللاستفسار: {ADMIN_USERNAME}"
+        f"🕒 سيتم التفعيل خلال 24 ساعة.\n\nللاستفسار: {ADMIN_USERNAME}"
     )
     keyboard = [[InlineKeyboardButton("🔙 رجوع", callback_data="menu_vip")]]
     await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
@@ -362,7 +409,7 @@ async def quality_callback(update: Update, context):
         context.user_data.pop("url", None)
 
 # -------------------------------------------------------------------
-# أوامر المشرف
+# أوامر المشرف وإحصائيات متقدمة
 # -------------------------------------------------------------------
 async def activate_vip_cmd(update: Update, context):
     if update.effective_user.id != ADMIN_ID:
@@ -376,16 +423,27 @@ async def activate_vip_cmd(update: Update, context):
     except:
         await update.message.reply_text("⚠️ الاستخدام: /activate_vip <user_id> <أيام>")
 
-async def stats_cmd(update: Update, context):
+async def stats(update: Update, context):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("⛔ هذا الأمر للمشرف فقط.")
         return
+    c.execute("SELECT COUNT(*) FROM bot_users")
+    total_users = c.fetchone()[0]
     c.execute("SELECT COUNT(*) FROM vip")
     vip_count = c.fetchone()[0]
     c.execute("SELECT COUNT(*) FROM daily_downloads WHERE date=?", (datetime.now().strftime("%Y-%m-%d"),))
     today_downloads = c.fetchone()[0]
-    text = f"📊 إحصائيات البوت\n\n👑 المشتركين VIP: {vip_count}\n📥 تحميلات اليوم: {today_downloads}\n🚀 الإصدار: {BOT_VERSION}\n📞 المشرف: {ADMIN_USERNAME}"
-    await update.message.reply_text(text)
+    c.execute("SELECT COUNT(*) FROM daily_downloads")
+    total_downloads = c.fetchone()[0]
+    text = (
+        f"📊 **إحصائيات البوت**\n\n"
+        f"👥 إجمالي المستخدمين: {total_users}\n"
+        f"👑 مشتركي VIP: {vip_count}\n"
+        f"📥 تحميلات اليوم: {today_downloads}\n"
+        f"📈 إجمالي التحميلات: {total_downloads}\n"
+        f"🚀 الإصدار: {BOT_VERSION}"
+    )
+    await update.message.reply_text(text, parse_mode="Markdown")
 
 # -------------------------------------------------------------------
 # التشغيل الرئيسي
@@ -394,7 +452,7 @@ def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("activate_vip", activate_vip_cmd))
-    app.add_handler(CommandHandler("stats", stats_cmd))
+    app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CallbackQueryHandler(menu_download, pattern="^menu_download$"))
     app.add_handler(CallbackQueryHandler(menu_usage, pattern="^menu_usage$"))
     app.add_handler(CallbackQueryHandler(menu_vip, pattern="^menu_vip$"))
