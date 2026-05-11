@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-بوت تحميل فيديوهات واستوريهات - الإصدار النهائي
-مع دعم VIP، وإعلانات، وحدود تحميل، وطرق دفع متعددة.
+بوت تحميل الفيديوهات - مع نظام VIP متكامل
+يسمح للمستخدم باختيار الباقة ثم عرض طرق الدفع.
 """
 
 import logging
@@ -27,7 +27,7 @@ from telegram.ext import (
 TOKEN = "8606881282:AAFUnul-fEQI2Y6JPnCFV9dxTDaV8n0onT4"
 ADMIN_USERNAME = "@Mac_0980"
 BOT_USERNAME = "ShamelDownloaderBot"
-ADMIN_ID = 7799287060  # تم إضافة المعرف الخاص بك
+ADMIN_ID = 7799287060
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -75,12 +75,11 @@ def increment_daily_count(user_id: int):
 def can_download(user_id: int) -> bool:
     return is_vip(user_id) or get_daily_count(user_id) < 5
 
-# إعلانات للمستخدم المجاني
+# إعلانات
 ADS = [
     "📢 اشترك في قناتنا: @YourChannel",
     "⭐ اشترك VIP لتحميل غير محدود",
     "🔥 البوت يدعم تيك توك لايف",
-    "💎 خصم خاص على الاشتراك السنوي"
 ]
 
 async def send_ad(user_id: int, context):
@@ -138,7 +137,7 @@ async def start(update: Update, context):
     )
     await update.message.reply_text(text, reply_markup=await main_menu())
 
-# ------------------- أزرار القائمة -------------------
+# ------------------- تحميل فيديو -------------------
 async def menu_download(update: Update, context):
     q = update.callback_query
     await q.answer()
@@ -147,6 +146,7 @@ async def menu_download(update: Update, context):
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="back")]])
     )
 
+# ------------------- استهلاكي -------------------
 async def menu_usage(update: Update, context):
     q = update.callback_query
     await q.answer()
@@ -159,6 +159,7 @@ async def menu_usage(update: Update, context):
         text = f"📊 استخدمت {used}/5 تحميلات اليوم.\nمتبقي: {remain}"
     await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="back")]]))
 
+# ------------------- VIP: عرض الباقات أولاً -------------------
 async def menu_vip(update: Update, context):
     q = update.callback_query
     await q.answer()
@@ -167,20 +168,54 @@ async def menu_vip(update: Update, context):
         c.execute("SELECT expiry_date FROM vip WHERE user_id=?", (uid,))
         expiry = c.fetchone()[0]
         text = f"✅ أنت مشترك VIP حتى {expiry}\nشكراً لدعمك!"
+        await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="back")]]))
     else:
-        text = (
-            "⭐ **باقات VIP** ⭐\n\n"
+        # عرض أزرار الباقات
+        keyboard = [
+            [InlineKeyboardButton("📅 أسبوعي - 1$", callback_data="plan_weekly")],
+            [InlineKeyboardButton("📆 شهري - 3$", callback_data="plan_monthly")],
+            [InlineKeyboardButton("🎉 سنوي - 25$ (توفير 11$)", callback_data="plan_yearly")],
+            [InlineKeyboardButton("🔙 رجوع", callback_data="back")]
+        ]
+        await q.edit_message_text(
+            "⭐ **اختر الباقة المناسبة لك:**\n\n"
             "• أسبوعي: 1$\n• شهري: 3$\n• سنوي: 25$\n\n"
-            "💳 **طرق الدفع المتاحة:**\n"
-            "⭐ نجوم تليجرام (Telegram Stars)\n"
-            "📱 فودافون كاش: 0123456789\n"
-            "🏦 إنستا باي: instapay@example.com\n\n"
-            f"📩 بعد الدفع أرسل الإيصال إلى المشرف {ADMIN_USERNAME}\n"
-            "🕒 سيتم التفعيل خلال 24 ساعة.\n\n"
-            "🔸 **للتجربة:** ارسل /activate_vip_test (VIP لمدة ساعة)"
+            "بعد الاختيار، ستظهر لك طرق الدفع.",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
         )
-    await q.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="back")]]))
 
+# ------------------- عرض طرق الدفع بعد اختيار الباقة -------------------
+async def show_payment_methods(update: Update, context, plan: str, price: str, duration_days: int):
+    q = update.callback_query
+    await q.answer()
+    text = (
+        f"⭐ **باقة {plan}**\n"
+        f"💰 المبلغ: {price}\n\n"
+        "💳 **طرق الدفع المتاحة:**\n"
+        "• ⭐ نجوم تليجرام (Telegram Stars)\n"
+        "• 📱 فودافون كاش: 0123456789\n"
+        "• 🏦 إنستا باي: instapay@example.com\n\n"
+        f"📩 **بعد الدفع**، أرسل صورة الإيصال إلى المشرف {ADMIN_USERNAME}\n"
+        "🕒 سيتم تفعيل اشتراكك خلال 24 ساعة.\n\n"
+        "🔸 **للتجربة فقط:** ارسل /activate_vip_test (VIP لمدة ساعة)"
+    )
+    keyboard = [
+        [InlineKeyboardButton("🔙 رجوع إلى الباقات", callback_data="menu_vip")],
+        [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="back")]
+    ]
+    await q.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def plan_weekly(update: Update, context):
+    await show_payment_methods(update, context, "أسبوعي", "1$", 7)
+
+async def plan_monthly(update: Update, context):
+    await show_payment_methods(update, context, "شهري", "3$", 30)
+
+async def plan_yearly(update: Update, context):
+    await show_payment_methods(update, context, "سنوي", "25$", 365)
+
+# ------------------- سياسة الاستخدام -------------------
 async def menu_policy(update: Update, context):
     q = update.callback_query
     await q.answer()
@@ -193,10 +228,11 @@ async def menu_policy(update: Update, context):
     )
     await q.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="back")]]))
 
+# ------------------- زر الرجوع العام -------------------
 async def back(update: Update, context):
     q = update.callback_query
     await q.answer()
-    await q.edit_message_text("القائمة الرئيسية:", reply_markup=await main_menu())
+    await q.edit_message_text("🏠 القائمة الرئيسية:", reply_markup=await main_menu())
 
 # ======================== معالج الروابط وجودة التحميل ========================
 async def handle_link(update: Update, context):
@@ -220,7 +256,7 @@ async def quality(update: Update, context):
     q = update.callback_query
     await q.answer()
     uid = q.from_user.id
-    quality = q.data  # "best" or "worst"
+    quality = q.data
     url = context.user_data.get("url")
     if not url:
         await q.edit_message_text("انتهى الرابط، أرسله مجدداً.")
@@ -263,7 +299,7 @@ async def activate_vip(update: Update, context):
     except:
         await update.message.reply_text("⚠️ الاستخدام: /activate_vip <user_id> <أيام>")
 
-# ======================== التشغيل الرئيسي ========================
+# ======================== التشغيل ========================
 def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
@@ -276,10 +312,15 @@ def main():
     app.add_handler(CallbackQueryHandler(menu_policy, pattern="^menu_policy$"))
     app.add_handler(CallbackQueryHandler(back, pattern="^back$"))
 
+    # معالجات الباقات
+    app.add_handler(CallbackQueryHandler(plan_weekly, pattern="^plan_weekly$"))
+    app.add_handler(CallbackQueryHandler(plan_monthly, pattern="^plan_monthly$"))
+    app.add_handler(CallbackQueryHandler(plan_yearly, pattern="^plan_yearly$"))
+
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link))
     app.add_handler(CallbackQueryHandler(quality, pattern="^(best|worst)$"))
 
-    logger.info("✅ البوت يعمل مع جميع الأزرار وطرق الدفع.")
+    logger.info("✅ البوت يعمل مع نظام اختيار الباقات أولاً ثم طرق الدفع.")
     app.run_polling()
 
 if __name__ == "__main__":
