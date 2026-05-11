@@ -9,8 +9,8 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
 TOKEN = "8606881282:AAFUnul-fEQI2Y6JPnCFV9dxTDaV8n0onT4"
-ADMIN_USERNAME = "@Mac_0980"  # المشرف المسؤول عن الدفع
-BOT_USERNAME = "ShamelDownloaderBot"  # اسم البوت الخاص بك (عدله)
+ADMIN_USERNAME = "@Mac_0980"
+BOT_USERNAME = "ShamelDownloaderBot"
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
@@ -19,16 +19,8 @@ if not os.path.exists("downloads"):
 
 conn = sqlite3.connect('bot_data.db', check_same_thread=False)
 c = conn.cursor()
-c.execute('''CREATE TABLE IF NOT EXISTS vip (
-    user_id INTEGER PRIMARY KEY,
-    expiry_date TEXT NOT NULL
-)''')
-c.execute('''CREATE TABLE IF NOT EXISTS daily_downloads (
-    user_id INTEGER,
-    date TEXT,
-    count INTEGER,
-    PRIMARY KEY (user_id, date)
-)''')
+c.execute('''CREATE TABLE IF NOT EXISTS vip (user_id INTEGER PRIMARY KEY, expiry_date TEXT NOT NULL)''')
+c.execute('''CREATE TABLE IF NOT EXISTS daily_downloads (user_id INTEGER, date TEXT, count INTEGER, PRIMARY KEY (user_id, date))''')
 conn.commit()
 
 def is_vip(user_id: int) -> bool:
@@ -106,7 +98,6 @@ async def download_video(url: str, quality: str = "best"):
                 filename = os.path.join("downloads", max([os.path.join("downloads", f) for f in files], key=os.path.getctime))
         return filename
 
-# ---------- واجهة احترافية ----------
 async def main_menu_keyboard():
     keyboard = [
         [InlineKeyboardButton("📥 تحميل فيديو", callback_data="menu_download")],
@@ -118,11 +109,11 @@ async def main_menu_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
+# ✅ دالة start مصححة – ترسل صورة مع النص مباشرة
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     first_name = user.first_name if user.first_name else "صديقي"
     
-    # رسالة ترحيب مع تحذير
     welcome_msg = (
         f"🎬 **أهلاً بك {first_name} في بوت التحميل الشامل** 🎬\n\n"
         "📥 **أرسل رابط فيديو من:**\n"
@@ -130,36 +121,33 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✅ يوتيوب  |  ✅ انستجرام (منشورات، ريلز، استوريهات عامة)\n\n"
         "📊 **المستخدم المجاني:** 5 تحميلات يومياً\n"
         "⭐ **VIP:** تحميل غير محدود + بدون إعلانات + جودة عالية\n\n"
-        "⚠️ **تنبيه هام:** هذا البوت لا يشجع على انتهاك حقوق النشر. المستخدم مسؤول عن المحتوى الذي يقوم بتحميله واستخدامه.\n"
-        "🚫 **يُمنع استخدام البوت لتحميل المحتوى المحمي بحقوق النشر دون إذن.**\n\n"
+        "⚠️ **تنبيه هام:** هذا البوت لا يشجع على انتهاك حقوق النشر. المستخدم مسؤول عن المحتوى الذي يقوم بتحميله واستخدامه.\n\n"
         "اختر من القائمة أدناه:"
     )
     
-    # إرسال صورة مصغرة أو ملصق متحرك (اختر نوع الملف)
+    # إرسال صورة مصغرة (thumbnail) مع النص كـ caption
+    photo_url = "https://cdn.pixabay.com/photo/2016/02/19/11/19/video-1210600_1280.png"
     try:
-        # محاولة إرسال صورة مصغرة (أيقونة تحميل) – يمكن تغيير الرابط لصورة من اختيارك
-        await update.message.bot.send_sticker(
-            chat_id=update.effective_chat.id,
-            sticker="CAACAgIAAxkBAAEHQwRkUWRgstf4vLq3jgok-sC9P5dwAgACAgADWQABJj3dDV09dW7JhSQvHgQ"  # 🔴 هذا معرف تجريبي، يجب استبداله بملصق حقيقي
-        )
-    except:
-        # إذا فشل الملصق، نرسل الصورة بدلاً منه
         await update.message.reply_photo(
-            photo="https://cdn.pixabay.com/photo/2016/02/19/11/19/video-1210600_1280.png",
+            photo=photo_url,
             caption=welcome_msg,
-            parse_mode="Markdown"
+            parse_mode="Markdown",
+            reply_markup=await main_menu_keyboard()
         )
-        return
-    
-    await update.message.reply_text(welcome_msg, reply_markup=await main_menu_keyboard(), parse_mode="Markdown")
+    except Exception as e:
+        # لو فشل إرسال الصورة، نرسل نصاً فقط
+        logging.error(f"فشل إرسال الصورة: {e}")
+        await update.message.reply_text(
+            welcome_msg,
+            parse_mode="Markdown",
+            reply_markup=await main_menu_keyboard()
+        )
 
 async def menu_download(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await query.edit_message_text(
-        "📥 **أرسل رابط الفيديو الآن**\n\n"
-        "مثال: https://www.tiktok.com/@user/video/123456789\n\n"
-        "لإلغاء العملية، اضغط /start",
+        "📥 **أرسل رابط الفيديو الآن**\n\nمثال: https://www.tiktok.com/@user/video/123456789\n\nلإلغاء العملية، اضغط /start",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="main_menu")]])
     )
@@ -210,7 +198,7 @@ async def menu_supported(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• تويتر/X (فيديوهات)\n"
         "• يوتيوب (فيديوهات)\n"
         "• انستجرام (منشورات، ريلز، استوريهات عامة)\n\n"
-        "🚧 **قريباً:** تحويل الفيديو إلى MP3 للمشتركين VIP، ودعم قرص جوجل."
+        "🚧 **قريباً:** تحويل الفيديو إلى MP3 للمشتركين VIP."
     )
     await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="main_menu")]]))
 
@@ -237,7 +225,7 @@ async def menu_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"• **الاسم:** {BOT_USERNAME}\n"
         "• **الإصدار:** 3.0 (Pro)\n"
         f"• **المطور والمشرف:** {ADMIN_USERNAME}\n"
-        "• **الهدف:** توفير أداة تحميل سريعة ومجانية مع خيار VIP لدعم التطوير.\n"
+        "• **الهدف:** توفير أداة تحميل سريعة ومجانية مع خيار VIP.\n"
         "• **اللغات المدعومة:** العربية فقط حالياً.\n"
         "• **الاستضافة:** خوادم عالية الأداء – تشغيل 24/7\n\n"
         "⭐ **لشراء VIP أو للدعم الفني:** تواصل مع المشرف بالضغط على اسمه أعلاه."
@@ -317,7 +305,6 @@ def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("activate_vip_test", activate_test_vip))
-    # القوائم
     app.add_handler(CallbackQueryHandler(menu_download, pattern="^menu_download$"))
     app.add_handler(CallbackQueryHandler(menu_vip, pattern="^menu_vip$"))
     app.add_handler(CallbackQueryHandler(menu_usage, pattern="^menu_usage$"))
@@ -325,7 +312,6 @@ def main():
     app.add_handler(CallbackQueryHandler(menu_policy, pattern="^menu_policy$"))
     app.add_handler(CallbackQueryHandler(menu_info, pattern="^menu_info$"))
     app.add_handler(CallbackQueryHandler(back_to_main_menu, pattern="^main_menu$"))
-    # معالجات عادية
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link))
     app.add_handler(CallbackQueryHandler(quality_callback, pattern="^(quality_best|quality_worst|main_menu)"))
     
