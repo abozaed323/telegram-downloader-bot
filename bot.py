@@ -23,18 +23,17 @@ from telegram.ext import (
 TOKEN = "8606881282:AAFUnul-fEQI2Y6JPnCFV9dxTDaV8n0onT4"
 ADMIN_USERNAME = "@Mac_0980"
 BOT_USERNAME = "ShamelDownloaderBot"
-ADMIN_ID = 7799287060          # ضع معرف المشرف الصحيح (الرقم الخاص بحساب @Mac_0980)
+ADMIN_ID = 7799287060
 
-BOT_VERSION = "5.0.0"
+BOT_VERSION = "5.1.0"
 DEFAULT_DAILY_LIMIT = 5
 
 # ======================== إعدادات الدفع ========================
 VODAFONE_NUMBER = "01040757693"
 INSTAPAY_NUMBER = "01128085081"
 
-# مفتاح Ammer Pay (تم إضافته كما طلبت)
+# مفتاح Ammer Pay (للحاجة المستقبلية، غير مستخدم حالياً)
 AMMER_PAY_API_KEY = "5775769170:LIVE:TG_LgpGu_wx9zf4gv6tdgdBYZ0A"
-# سيتم استخدامه لاحقاً إذا أردت تفعيل الدفع التلقائي عبر Ammer Pay
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -46,50 +45,15 @@ DOWNLOAD_DIR = "downloads"
 if not os.path.exists(DOWNLOAD_DIR):
     os.makedirs(DOWNLOAD_DIR)
 
-# ======================== قاعدة البيانات (SQLite) ========================
+# ======================== قاعدة البيانات ========================
 conn = sqlite3.connect("bot_data.db", check_same_thread=False)
 c = conn.cursor()
-
-c.execute("""
-CREATE TABLE IF NOT EXISTS vip (
-    user_id INTEGER PRIMARY KEY,
-    expiry_date TEXT NOT NULL
-)
-""")
-
-c.execute("""
-CREATE TABLE IF NOT EXISTS daily_downloads (
-    user_id INTEGER,
-    date TEXT,
-    count INTEGER,
-    PRIMARY KEY (user_id, date)
-)
-""")
-
-c.execute("""
-CREATE TABLE IF NOT EXISTS referrals (
-    referrer_id INTEGER,
-    referred_id INTEGER,
-    date TEXT DEFAULT CURRENT_TIMESTAMP,
-    is_activated INTEGER DEFAULT 0,
-    PRIMARY KEY (referrer_id, referred_id)
-)
-""")
-
-c.execute("""
-CREATE TABLE IF NOT EXISTS pending_payments (
-    user_id INTEGER PRIMARY KEY,
-    plan TEXT,
-    amount REAL,
-    payment_url TEXT,
-    status TEXT DEFAULT 'pending',
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-)
-""")
-
+c.execute("CREATE TABLE IF NOT EXISTS vip (user_id INTEGER PRIMARY KEY, expiry_date TEXT NOT NULL)")
+c.execute("CREATE TABLE IF NOT EXISTS daily_downloads (user_id INTEGER, date TEXT, count INTEGER, PRIMARY KEY (user_id, date))")
+c.execute("CREATE TABLE IF NOT EXISTS referrals (referrer_id INTEGER, referred_id INTEGER, date TEXT DEFAULT CURRENT_TIMESTAMP, is_activated INTEGER DEFAULT 0, PRIMARY KEY (referrer_id, referred_id))")
+c.execute("CREATE TABLE IF NOT EXISTS pending_payments (user_id INTEGER PRIMARY KEY, plan TEXT, amount REAL, payment_url TEXT, status TEXT DEFAULT 'pending', created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
 conn.commit()
 
-# ======================== دوال VIP والحد اليومي ========================
 def is_vip(user_id: int) -> bool:
     c.execute("SELECT expiry_date FROM vip WHERE user_id=?", (user_id,))
     row = c.fetchone()
@@ -109,10 +73,7 @@ def get_daily_count(user_id: int) -> int:
 
 def increment_daily_count(user_id: int):
     today = datetime.now().strftime("%Y-%m-%d")
-    c.execute("""
-        INSERT INTO daily_downloads (user_id, date, count) VALUES (?, ?, 1)
-        ON CONFLICT(user_id, date) DO UPDATE SET count = count + 1
-    """, (user_id, today))
+    c.execute("INSERT INTO daily_downloads (user_id, date, count) VALUES (?, ?, 1) ON CONFLICT(user_id, date) DO UPDATE SET count = count + 1", (user_id, today))
     conn.commit()
 
 def can_download(user_id: int) -> bool:
@@ -130,10 +91,9 @@ def activate_vip(user_id: int, days: int):
 
 # ======================== الإعلانات ========================
 ADVERTISEMENTS = [
-    f"📢 اشترك في قناتنا @YourChannel للحصول على بوتات حصرية",
-    f"⭐ باقات VIP تبدأ من 1$ فقط أسبوعياً، تواصل مع {ADMIN_USERNAME}",
-    "🔥 البوت يدعم الآن تحميل البث المباشر من تيك توك!",
-    "💎 اشترك الآن واحصل على تحميل غير محدود بدون إعلانات"
+    f"📢 اشترك في قناتنا @YourChannel",
+    f"⭐ باقات VIP تواصل مع {ADMIN_USERNAME}",
+    "🔥 البوت يدعم تحميل البث المباشر من تيك توك!",
 ]
 
 async def send_ad(user_id: int, context):
@@ -141,28 +101,18 @@ async def send_ad(user_id: int, context):
         await context.bot.send_message(chat_id=user_id, text=random.choice(ADVERTISEMENTS))
 
 # ======================== تحميل الفيديو ========================
-def detect_platform(url: str) -> str:
+def detect_platform(url: str):
     u = url.lower()
     if "tiktok.com" in u:
+        if "/photo/" in u:
+            return "تيك توك صورة"
         if "/live" in u or "?live" in u:
-            return "تيك توك لايف 🎥"
+            return "تيك توك لايف"
         return "تيك توك"
-    if "facebook.com" in u or "fb.watch" in u:
-        return "فيسبوك"
-    if "twitter.com" in u or "x.com" in u:
-        return "تويتر"
-    if "youtube.com" in u or "youtu.be" in u:
-        if "/shorts/" in u:
-            return "يوتيوب Shorts"
-        return "يوتيوب"
-    if "instagram.com" in u:
-        if "/stories/" in u:
-            return "انستجرام استوري"
-        if "/reel/" in u:
-            return "انستجرام ريلز"
-        if "/p/" in u:
-            return "انستجرام منشور"
-        return "انستجرام"
+    if "facebook.com" in u or "fb.watch" in u: return "فيسبوك"
+    if "twitter.com" in u or "x.com" in u: return "تويتر"
+    if "youtube.com" in u or "youtu.be" in u: return "يوتيوب"
+    if "instagram.com" in u: return "انستجرام"
     return "غير معروف"
 
 async def download_video(url: str, quality: str = "best") -> str:
@@ -176,6 +126,8 @@ async def download_video(url: str, quality: str = "best") -> str:
     if "/live" in url:
         opts["live_from_start"] = True
         opts["format"] = "best[height<=480]"
+    if "/photo/" in url:
+        raise Exception("هذا الرابط لصورة وليس فيديو. يرجى إرسال رابط فيديو من تيك توك (يحتوي على /video/).")
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
         filename = ydl.prepare_filename(info)
@@ -194,8 +146,7 @@ async def handle_referral(update: Update, context):
             if referrer_id != user_id:
                 c.execute("SELECT * FROM referrals WHERE referrer_id=? AND referred_id=?", (referrer_id, user_id))
                 if not c.fetchone():
-                    c.execute("INSERT INTO referrals (referrer_id, referred_id, is_activated) VALUES (?, ?, 0)",
-                              (referrer_id, user_id))
+                    c.execute("INSERT INTO referrals (referrer_id, referred_id, is_activated) VALUES (?, ?, 0)", (referrer_id, user_id))
                     conn.commit()
                     await update.message.reply_text("🎉 تم تسجيل إحالتك! سيحصل من دعاك على مكافأة عند تفعيل اشتراكك.")
         except Exception as e:
@@ -229,7 +180,6 @@ async def start(update: Update, context):
     )
     await update.message.reply_text(text, parse_mode="Markdown", reply_markup=await main_menu())
 
-# ======================== أزرار القائمة ========================
 async def menu_download(update: Update, context):
     q = update.callback_query
     await q.answer()
@@ -254,7 +204,6 @@ async def menu_usage(update: Update, context):
     await q.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="back")]]))
 
 async def menu_vip(update: Update, context):
-    """عرض باقات VIP وزر طرق الدفع"""
     q = update.callback_query
     await q.answer()
     uid = q.from_user.id
@@ -297,10 +246,7 @@ async def menu_referrals(update: Update, context):
         f"📊 **إحصائياتك:**\n• عدد المدعوين: {total}\n• مدعوون نشطون: {active}\n\n"
         "🎁 **المكافآت:**\nكل 5 مدعوين نشطين = يوم VIP مجاني\nكل 10 مدعوين نشطين = أسبوع VIP مجاني"
     )
-    keyboard = [
-        [InlineKeyboardButton("📋 نسخ الرابط", callback_data="copy_referral")],
-        [InlineKeyboardButton("🔙 رجوع", callback_data="back")]
-    ]
+    keyboard = [[InlineKeyboardButton("📋 نسخ الرابط", callback_data="copy_referral")], [InlineKeyboardButton("🔙 رجوع", callback_data="back")]]
     await q.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def copy_referral(update: Update, context):
@@ -325,9 +271,8 @@ async def back(update: Update, context):
     await q.answer()
     await q.edit_message_text("🏠 **القائمة الرئيسية**", reply_markup=await main_menu(), parse_mode="Markdown")
 
-# ======================== لوحة الدفع الاحترافية (العمل الأساسي) ========================
+# ======================== لوحة الدفع (تم إصلاحها بالكامل) ========================
 async def vip_payment_menu(update: Update, context):
-    """هذه هي الدالة التي تظهر عند الضغط على 💳 طرق الدفع"""
     q = update.callback_query
     await q.answer()
     keyboard = [
@@ -346,17 +291,17 @@ async def vip_payment_menu(update: Update, context):
         parse_mode="Markdown"
     )
 
-# ========== دفع النجوم (مباشر) ==========
+# دفع النجوم
 async def pay_stars(update: Update, context):
     q = update.callback_query
     await q.answer()
-    prices = [LabeledPrice("VIP اشتراك أسبوعي", 100)]  # 100 نجمة
+    prices = [LabeledPrice("VIP اشتراك أسبوعي", 100)]
     await context.bot.send_invoice(
         chat_id=q.from_user.id,
         title="⭐ اشتراك VIP - أسبوعي",
         description="✅ تحميل غير محدود\n✅ بدون إعلانات\n✅ جودة عالية 4K",
         payload="vip_weekly_stars",
-        provider_token="",  # يترك فارغاً للنجوم
+        provider_token="",
         currency="XTR",
         prices=prices,
         need_name=False,
@@ -369,14 +314,13 @@ async def precheckout_callback(update: Update, context):
 
 async def successful_payment_callback(update: Update, context):
     user_id = update.effective_user.id
-    expiry = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
     activate_vip(user_id, 7)
     await update.message.reply_text(
-        f"✅ **تم تفعيل اشتراك VIP بنجاح عبر النجوم!**\n\n📅 ينتهي في: {expiry}\n🎉 استمتع بالتحميل غير المحدود.",
+        f"✅ **تم تفعيل اشتراك VIP بنجاح عبر النجوم!**\n\n📅 لمدة 7 أيام.\n🎉 استمتع بالتحميل غير المحدود.",
         parse_mode="Markdown"
     )
 
-# ========== فودافون كاش (يدوي مع إرسال الإيصال) ==========
+# فودافون كاش وإنستا باي مع رفع الإيصال
 async def pay_vodafone(update: Update, context):
     q = update.callback_query
     await q.answer()
@@ -392,7 +336,6 @@ async def pay_vodafone(update: Update, context):
     keyboard = [[InlineKeyboardButton("📸 إرسال إيصال الدفع", callback_data="send_receipt_vodafone")]]
     await q.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# ========== إنستا باي (يدوي مع إرسال الإيصال) ==========
 async def pay_instapay(update: Update, context):
     q = update.callback_query
     await q.answer()
@@ -408,7 +351,6 @@ async def pay_instapay(update: Update, context):
     keyboard = [[InlineKeyboardButton("📸 إرسال إيصال الدفع", callback_data="send_receipt_instapay")]]
     await q.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# ========== معالج رفع الإيصال ==========
 async def request_receipt(update: Update, context, method: str):
     q = update.callback_query
     await q.answer()
@@ -429,17 +371,14 @@ async def send_receipt_vodafone(update: Update, context):
 async def send_receipt_instapay(update: Update, context):
     await request_receipt(update, context, "إنستا باي")
 
-# ========== استقبال صورة الإيصال ==========
 async def handle_receipt_photo(update: Update, context):
     user = update.effective_user
     user_id = user.id
     user_name = user.username or user.first_name or "لا يوجد"
     method = context.user_data.get("payment_method", "غير محدد")
-
     photo_file = await update.message.photo[-1].get_file()
     photo_path = f"receipt_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
     await photo_file.download_to_drive(photo_path)
-
     caption = (
         f"🧾 **طلب تفعيل VIP - إيصال دفع**\n\n"
         f"👤 **المستخدم:** [{user_name}](tg://user?id={user_id})\n"
@@ -451,10 +390,8 @@ async def handle_receipt_photo(update: Update, context):
     with open(photo_path, "rb") as photo:
         await context.bot.send_photo(chat_id=ADMIN_ID, photo=photo, caption=caption, parse_mode="Markdown")
     os.remove(photo_path)
-
     await update.message.reply_text(
-        "✅ **تم استلام إيصالك بنجاح!**\n"
-        "سيتم إعلامك بعد التفعيل.\n"
+        "✅ **تم استلام إيصالك بنجاح!**\nسيتم التفعيل بعد التحقق.\n"
         f"للاستفسار: {ADMIN_USERNAME}",
         parse_mode="Markdown"
     )
@@ -468,13 +405,14 @@ async def handle_link(update: Update, context):
     if platform == "غير معروف":
         await update.message.reply_text("❌ الرابط غير مدعوم. أرسل رابطاً من إحدى المنصات المدعومة.")
         return
+    if platform == "تيك توك صورة":
+        await update.message.reply_text("❌ هذا الرابط لصورة وليس فيديو. يرجى إرسال رابط فيديو من تيك توك (يحتوي على `/video/` أو `/live/`).")
+        return
     if not can_download(uid):
-        remain = get_remaining_downloads(uid)
         await update.message.reply_text(
             f"⚠️ **استنفدت تحميلات اليوم المجانية**\n"
-            f"📊 استخدمت {get_daily_count(uid)}/{DEFAULT_DAILY_LIMIT}\n"
-            f"📈 المتبقي: {remain} تحميلات\n\n"
-            "⭐ اشترك في VIP للتحميل غير المحدود\nاستخدم القائمة الرئيسية ← الاشتراك VIP",
+            f"📊 استخدمت {get_daily_count(uid)}/{DEFAULT_DAILY_LIMIT}\n\n"
+            "⭐ اشترك في VIP للتحميل غير المحدود.\nاستخدم القائمة الرئيسية ← الاشتراك VIP",
             parse_mode="Markdown"
         )
         return
@@ -555,11 +493,9 @@ async def stats(update: Update, context):
     )
     await update.message.reply_text(text, parse_mode="Markdown")
 
-# ======================== التشغيل الرئيسي ========================
+# ======================== التشغيل ========================
 def main():
     app = Application.builder().token(TOKEN).build()
-
-    # الأوامر
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("activate_vip", activate_vip))
     app.add_handler(CommandHandler("stats", stats))
@@ -581,7 +517,7 @@ def main():
     app.add_handler(CallbackQueryHandler(send_receipt_vodafone, pattern="^send_receipt_vodafone$"))
     app.add_handler(CallbackQueryHandler(send_receipt_instapay, pattern="^send_receipt_instapay$"))
 
-    # الدفع بالنجوم
+    # دفع النجوم
     app.add_handler(PreCheckoutQueryHandler(precheckout_callback))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))
 
