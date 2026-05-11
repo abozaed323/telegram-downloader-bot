@@ -289,7 +289,7 @@ async def contact_admin(update: Update, context):
         f"🏦 إنستا باي: {INSTAPAY_NUMBER}\n\n"
         f"💰 المبلغ: 1$ للأسبوع، 3$ للشهر، 25$ للسنة\n\n"
         f"📌 بعد التحويل، تواصل مع المشرف {ADMIN_USERNAME} وأرسل صورة الإيصال مع معرف التليجرام الخاص بك.\n"
-        f"🕒 سيتم التفعيل خلال 24 ساعة.\n\nللاستفسار: {ADMIN_USERNAME}"
+        f"🕒 سيتم التفعيل خلال لحظات.\n\nللاستفسار: {ADMIN_USERNAME}"
     )
     keyboard = [[InlineKeyboardButton("🔙 رجوع", callback_data="menu_vip")]]
     await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
