@@ -151,6 +151,7 @@ async def menu_vip(update: Update, context):
         text = f"✅ أنت مشترك VIP حتى {expiry}\nشكراً لدعمك!"
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="back")]]))
     else:
+        # عرض أزرار الباقات
         keyboard = [
             [InlineKeyboardButton("📅 أسبوعي - 1$", callback_data="plan_weekly")],
             [InlineKeyboardButton("📆 شهري - 3$", callback_data="plan_monthly")],
@@ -168,15 +169,28 @@ async def show_payment_methods(update: Update, context, plan: str, price: str):
     await q.answer()
     text = (
         f"⭐ **باقة {plan}**\n💰 المبلغ: {price}\n\n"
-        "💳 **طرق الدفع المتاحة:**\n• ⭐ نجوم تليجرام (Telegram Stars)\n• 📱 فودافون كاش: 0123456789\n• 🏦 إنستا باي: instapay@example.com\n\n"
-        f"📩 **بعد الدفع**، أرسل صورة الإيصال إلى المشرف {ADMIN_USERNAME}\n🕒 سيتم التفعيل خلال 24 ساعة.\n\n🔸 **للتجربة فقط:** ارسل /activate_vip_test (VIP لمدة ساعة)"
+        "💳 **طرق الدفع المتاحة:**\n"
+        "• ⭐ نجوم تليجرام (Telegram Stars)\n"
+        "• 📱 فودافون كاش: 0123456789\n"
+        "• 🏦 إنستا باي: instapay@example.com\n\n"
+        f"📩 **بعد الدفع**، أرسل صورة الإيصال إلى المشرف {ADMIN_USERNAME}\n"
+        "🕒 سيتم التفعيل خلال 24 ساعة.\n\n"
+        "🔸 **للتجربة فقط:** ارسل /activate_vip_test (VIP لمدة ساعة)"
     )
-    keyboard = [[InlineKeyboardButton("🔙 رجوع إلى الباقات", callback_data="menu_vip")], [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="back")]]
+    keyboard = [
+        [InlineKeyboardButton("🔙 رجوع إلى الباقات", callback_data="menu_vip")],
+        [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="back")]
+    ]
     await q.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
-async def plan_weekly(update: Update, context): await show_payment_methods(update, context, "أسبوعي", "1$")
-async def plan_monthly(update: Update, context): await show_payment_methods(update, context, "شهري", "3$")
-async def plan_yearly(update: Update, context): await show_payment_methods(update, context, "سنوي", "25$")
+async def plan_weekly(update: Update, context):
+    await show_payment_methods(update, context, "أسبوعي", "1$")
+
+async def plan_monthly(update: Update, context):
+    await show_payment_methods(update, context, "شهري", "3$")
+
+async def plan_yearly(update: Update, context):
+    await show_payment_methods(update, context, "سنوي", "25$")
 
 async def menu_policy(update: Update, context):
     q = update.callback_query
@@ -204,7 +218,10 @@ async def handle_link(update: Update, context):
         await update.message.reply_text("⚠️ استنفدت تحميلات اليوم المجانية. اشترك VIP أو انتظر غداً.")
         return
     context.user_data["url"] = url
-    keyboard = [[InlineKeyboardButton("🎥 جودة عالية", callback_data="best")], [InlineKeyboardButton("📱 جودة منخفضة", callback_data="worst")]]
+    keyboard = [
+        [InlineKeyboardButton("🎥 جودة عالية", callback_data="best")],
+        [InlineKeyboardButton("📱 جودة منخفضة", callback_data="worst")],
+    ]
     await update.message.reply_text(f"📌 المنصة: {platform}\nاختر الجودة:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def quality(update: Update, context):
@@ -260,17 +277,21 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("activate_vip_test", test_vip))
     app.add_handler(CommandHandler("activate_vip", activate_vip))
+
     app.add_handler(CallbackQueryHandler(menu_download, pattern="^menu_download$"))
     app.add_handler(CallbackQueryHandler(menu_usage, pattern="^menu_usage$"))
     app.add_handler(CallbackQueryHandler(menu_vip, pattern="^menu_vip$"))
     app.add_handler(CallbackQueryHandler(menu_policy, pattern="^menu_policy$"))
     app.add_handler(CallbackQueryHandler(back, pattern="^back$"))
+
     app.add_handler(CallbackQueryHandler(plan_weekly, pattern="^plan_weekly$"))
     app.add_handler(CallbackQueryHandler(plan_monthly, pattern="^plan_monthly$"))
     app.add_handler(CallbackQueryHandler(plan_yearly, pattern="^plan_yearly$"))
+
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link))
     app.add_handler(CallbackQueryHandler(quality, pattern="^(best|worst)$"))
-    logger.info("✅ البوت يعمل مع نظام الباقات وطرق الدفع.")
+
+    logger.info("✅ البوت يعمل مع نظام اختيار الباقات ثم عرض طرق الدفع.")
     app.run_polling()
 
 if __name__ == "__main__":
