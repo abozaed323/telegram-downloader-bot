@@ -19,22 +19,26 @@ from telegram.ext import (
     ContextTypes,
 )
 
-# ======================== الإعدادات الأساسية ========================
+# -------------------------------------------------------------------
+# الإعدادات الأساسية (ثابتة ولا تحتاج تغيير)
+# -------------------------------------------------------------------
 TOKEN = "8606881282:AAFUnul-fEQI2Y6JPnCFV9dxTDaV8n0onT4"
 ADMIN_USERNAME = "@Mac_0980"
 BOT_USERNAME = "ShamelDownloaderBot"
-ADMIN_ID = 7799287060
-
-BOT_VERSION = "5.1.0"
+ADMIN_ID = 7799287060          # ضع معرفك الصحيح (مشرف البوت)
+BOT_VERSION = "5.2.0"
 DEFAULT_DAILY_LIMIT = 5
 
-# ======================== إعدادات الدفع ========================
+# أرقام الدفع الجديدة
 VODAFONE_NUMBER = "01040757693"
 INSTAPAY_NUMBER = "01128085081"
 
-# مفتاح Ammer Pay (للحاجة المستقبلية، غير مستخدم حالياً)
+# مفتاح Ammer Pay (للاستخدام المستقبلي)
 AMMER_PAY_API_KEY = "5775769170:LIVE:TG_LgpGu_wx9zf4gv6tdgdBYZ0A"
 
+# -------------------------------------------------------------------
+# إعدادات التسجيل والمجلدات
+# -------------------------------------------------------------------
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
@@ -45,15 +49,48 @@ DOWNLOAD_DIR = "downloads"
 if not os.path.exists(DOWNLOAD_DIR):
     os.makedirs(DOWNLOAD_DIR)
 
-# ======================== قاعدة البيانات ========================
+# -------------------------------------------------------------------
+# قاعدة بيانات SQLite (تنشأ تلقائياً)
+# -------------------------------------------------------------------
 conn = sqlite3.connect("bot_data.db", check_same_thread=False)
 c = conn.cursor()
-c.execute("CREATE TABLE IF NOT EXISTS vip (user_id INTEGER PRIMARY KEY, expiry_date TEXT NOT NULL)")
-c.execute("CREATE TABLE IF NOT EXISTS daily_downloads (user_id INTEGER, date TEXT, count INTEGER, PRIMARY KEY (user_id, date))")
-c.execute("CREATE TABLE IF NOT EXISTS referrals (referrer_id INTEGER, referred_id INTEGER, date TEXT DEFAULT CURRENT_TIMESTAMP, is_activated INTEGER DEFAULT 0, PRIMARY KEY (referrer_id, referred_id))")
-c.execute("CREATE TABLE IF NOT EXISTS pending_payments (user_id INTEGER PRIMARY KEY, plan TEXT, amount REAL, payment_url TEXT, status TEXT DEFAULT 'pending', created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+
+c.execute("""
+CREATE TABLE IF NOT EXISTS vip (
+    user_id INTEGER PRIMARY KEY,
+    expiry_date TEXT NOT NULL
+)
+""")
+c.execute("""
+CREATE TABLE IF NOT EXISTS daily_downloads (
+    user_id INTEGER,
+    date TEXT,
+    count INTEGER,
+    PRIMARY KEY (user_id, date)
+)
+""")
+c.execute("""
+CREATE TABLE IF NOT EXISTS referrals (
+    referrer_id INTEGER,
+    referred_id INTEGER,
+    date TEXT DEFAULT CURRENT_TIMESTAMP,
+    is_activated INTEGER DEFAULT 0,
+    PRIMARY KEY (referrer_id, referred_id)
+)
+""")
+c.execute("""
+CREATE TABLE IF NOT EXISTS pending_payments (
+    user_id INTEGER PRIMARY KEY,
+    plan TEXT,
+    amount REAL,
+    payment_url TEXT,
+    status TEXT DEFAULT 'pending',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+)
+""")
 conn.commit()
 
+# ------------------- دوال قاعدة البيانات -------------------
 def is_vip(user_id: int) -> bool:
     c.execute("SELECT expiry_date FROM vip WHERE user_id=?", (user_id,))
     row = c.fetchone()
@@ -73,7 +110,10 @@ def get_daily_count(user_id: int) -> int:
 
 def increment_daily_count(user_id: int):
     today = datetime.now().strftime("%Y-%m-%d")
-    c.execute("INSERT INTO daily_downloads (user_id, date, count) VALUES (?, ?, 1) ON CONFLICT(user_id, date) DO UPDATE SET count = count + 1", (user_id, today))
+    c.execute("""
+        INSERT INTO daily_downloads (user_id, date, count) VALUES (?, ?, 1)
+        ON CONFLICT(user_id, date) DO UPDATE SET count = count + 1
+    """, (user_id, today))
     conn.commit()
 
 def can_download(user_id: int) -> bool:
@@ -81,7 +121,7 @@ def can_download(user_id: int) -> bool:
 
 def get_remaining_downloads(user_id: int) -> int:
     if is_vip(user_id):
-        return -1
+        return -1  # غير محدود
     return max(0, DEFAULT_DAILY_LIMIT - get_daily_count(user_id))
 
 def activate_vip(user_id: int, days: int):
@@ -89,16 +129,21 @@ def activate_vip(user_id: int, days: int):
     c.execute("INSERT OR REPLACE INTO vip (user_id, expiry_date) VALUES (?, ?)", (user_id, expiry))
     conn.commit()
 
-# ======================== الإعلانات ========================
-ADVERTISEMENTS = [
-    f"📢 اشترك في قناتنا @YourChannel",
-    f"⭐ باقات VIP تواصل مع {ADMIN_USERNAME}",
-    "🔥 البوت يدعم تحميل البث المباشر من تيك توك!",
-]
+# ------------------- الإعلان الجديد (ما بعد التحميل) -------------------
+PROMO_MESSAGE = (
+    "🎁 **اشترك في قناتنا** 🎁\n"
+    "https://t.me/dawinlod\n\n"
+    "🔥 **عرض خاص:**\n"
+    "كل من يشترك في القناة ويبلغ المشرف، يحصل على **5 تحميلات مجانية إضافية** كهدية!\n"
+    "ادعم صديقك وشارك القناة مع أصدقائك.\n\n"
+    f"للاستفسار: {ADMIN_USERNAME}"
+)
 
-async def send_ad(user_id: int, context):
-    if not is_vip(user_id):
-        await context.bot.send_message(chat_id=user_id, text=random.choice(ADVERTISEMENTS))
+async def send_promotion(user_id: int, context: ContextTypes.DEFAULT_TYPE):
+    """إرسال رسالة دعائية للقناة بعد التحميل (للمستخدم المجاني وVIP على حد سواء اختيارياً)"""
+    # سترسل هذه الرسالة بعد كل تحميل ناجح (بغض النظر عن VIP)
+    # يمكنك تعديل الشرط إذا أردت إرسالها للمجاني فقط
+    await context.bot.send_message(chat_id=user_id, text=PROMO_MESSAGE, parse_mode="Markdown")
 
 # ======================== تحميل الفيديو ========================
 def detect_platform(url: str):
@@ -127,7 +172,7 @@ async def download_video(url: str, quality: str = "best") -> str:
         opts["live_from_start"] = True
         opts["format"] = "best[height<=480]"
     if "/photo/" in url:
-        raise Exception("هذا الرابط لصورة وليس فيديو. يرجى إرسال رابط فيديو من تيك توك (يحتوي على /video/).")
+        raise Exception("هذا الرابط لصورة وليس فيديو. يرجى إرسال رابط فيديو من تيك توك (يحتوي على /video/ أو /live/).")
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
         filename = ydl.prepare_filename(info)
@@ -137,7 +182,7 @@ async def download_video(url: str, quality: str = "best") -> str:
                 filename = os.path.join(DOWNLOAD_DIR, max([os.path.join(DOWNLOAD_DIR, f) for f in files], key=os.path.getctime))
         return filename
 
-# ======================== نظام الإحالات ========================
+# ------------------- نظام الإحالات -------------------
 async def handle_referral(update: Update, context):
     if context.args and context.args[0].startswith("ref_"):
         try:
@@ -152,7 +197,7 @@ async def handle_referral(update: Update, context):
         except Exception as e:
             logger.error(f"Referral error: {e}")
 
-# ======================== القائمة الرئيسية ========================
+# ======================== القائمة الرئيسية والأزرار ========================
 async def main_menu():
     keyboard = [
         [InlineKeyboardButton("📥 تحميل فيديو", callback_data="menu_download")],
@@ -203,6 +248,9 @@ async def menu_usage(update: Update, context):
         text = f"📊 **استخدمت اليوم {used}/{DEFAULT_DAILY_LIMIT}**\n📈 **المتبقي:** {remain} تحميلات\n\nلرفع الحد، اشترك في VIP"
     await q.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="back")]]))
 
+# ------------------------------------------------------------
+# القسم الأهم: زر VIP وطرق الدفع (تم إصلاحه)
+# ------------------------------------------------------------
 async def menu_vip(update: Update, context):
     q = update.callback_query
     await q.answer()
@@ -213,6 +261,7 @@ async def menu_vip(update: Update, context):
         text = f"✅ **أنت مشترك VIP حتى {expiry}**\nشكراً لدعمك المستمر 🎉"
         await q.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="back")]]))
     else:
+        # زر طرق الدفع الجديد
         keyboard = [
             [InlineKeyboardButton("💳 طرق الدفع", callback_data="vip_payment_menu")],
             [InlineKeyboardButton("🔙 رجوع", callback_data="back")]
@@ -230,49 +279,8 @@ async def menu_vip(update: Update, context):
         )
         await q.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
-async def menu_referrals(update: Update, context):
-    q = update.callback_query
-    await q.answer()
-    uid = q.from_user.id
-    bot_username = BOT_USERNAME
-    referral_link = f"https://t.me/{bot_username}?start=ref_{uid}"
-    c.execute("SELECT COUNT(*) FROM referrals WHERE referrer_id=?", (uid,))
-    total = c.fetchone()[0]
-    c.execute("SELECT COUNT(*) FROM referrals WHERE referrer_id=? AND is_activated=1", (uid,))
-    active = c.fetchone()[0]
-    text = (
-        "🔗 **نظام الإحالات** 🔗\n\nادعُ أصدقاءك واحصل على مكافآت!\n\n"
-        f"📢 **رابط الإحالة الخاص بك:**\n`{referral_link}`\n\n"
-        f"📊 **إحصائياتك:**\n• عدد المدعوين: {total}\n• مدعوون نشطون: {active}\n\n"
-        "🎁 **المكافآت:**\nكل 5 مدعوين نشطين = يوم VIP مجاني\nكل 10 مدعوين نشطين = أسبوع VIP مجاني"
-    )
-    keyboard = [[InlineKeyboardButton("📋 نسخ الرابط", callback_data="copy_referral")], [InlineKeyboardButton("🔙 رجوع", callback_data="back")]]
-    await q.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
-
-async def copy_referral(update: Update, context):
-    q = update.callback_query
-    await q.answer("تم نسخ الرابط! أرسله لأصدقائك ✅", show_alert=True)
-
-async def menu_policy(update: Update, context):
-    q = update.callback_query
-    await q.answer()
-    text = (
-        "⚖️ **سياسة الاستخدام وإخلاء المسؤولية** ⚖️\n\n"
-        "1️⃣ **المسؤولية:** المستخدم هو المسؤول الوحيد عن المحتوى الذي يقوم بتحميله أو مشاركته.\n"
-        "2️⃣ **حقوق النشر:** يُمنع تحميل المواد المحمية بحقوق الطبع والنشر دون إذن مسبق.\n"
-        "3️⃣ **الخصوصية:** لا نقوم بتخزين الملفات بعد إرسالها للمستخدم.\n"
-        f"4️⃣ **الإبلاغ:** للشكاوى أو الاستفسارات، تواصل مع المشرف {ADMIN_USERNAME}\n\n"
-        f"📩 {ADMIN_USERNAME}"
-    )
-    await q.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="back")]]))
-
-async def back(update: Update, context):
-    q = update.callback_query
-    await q.answer()
-    await q.edit_message_text("🏠 **القائمة الرئيسية**", reply_markup=await main_menu(), parse_mode="Markdown")
-
-# ======================== لوحة الدفع (تم إصلاحها بالكامل) ========================
 async def vip_payment_menu(update: Update, context):
+    """لوحة طرق الدفع - هذه الدالة يجب أن تعمل بعد الضغط على زر 💳"""
     q = update.callback_query
     await q.answer()
     keyboard = [
@@ -291,7 +299,7 @@ async def vip_payment_menu(update: Update, context):
         parse_mode="Markdown"
     )
 
-# دفع النجوم
+# ------------------- باقي دوال الدفع (نجوم وفودافون وإنستا) -------------------
 async def pay_stars(update: Update, context):
     q = update.callback_query
     await q.answer()
@@ -320,7 +328,6 @@ async def successful_payment_callback(update: Update, context):
         parse_mode="Markdown"
     )
 
-# فودافون كاش وإنستا باي مع رفع الإيصال
 async def pay_vodafone(update: Update, context):
     q = update.callback_query
     await q.answer()
@@ -397,6 +404,50 @@ async def handle_receipt_photo(update: Update, context):
     )
     context.user_data.pop("payment_method", None)
 
+async def menu_referrals(update: Update, context):
+    q = update.callback_query
+    await q.answer()
+    uid = q.from_user.id
+    bot_username = BOT_USERNAME
+    referral_link = f"https://t.me/{bot_username}?start=ref_{uid}"
+    c.execute("SELECT COUNT(*) FROM referrals WHERE referrer_id=?", (uid,))
+    total = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM referrals WHERE referrer_id=? AND is_activated=1", (uid,))
+    active = c.fetchone()[0]
+    text = (
+        "🔗 **نظام الإحالات** 🔗\n\nادعُ أصدقاءك واحصل على مكافآت!\n\n"
+        f"📢 **رابط الإحالة الخاص بك:**\n`{referral_link}`\n\n"
+        f"📊 **إحصائياتك:**\n• عدد المدعوين: {total}\n• مدعوون نشطون: {active}\n\n"
+        "🎁 **المكافآت:**\nكل 5 مدعوين نشطين = يوم VIP مجاني\nكل 10 مدعوين نشطين = أسبوع VIP مجاني"
+    )
+    keyboard = [
+        [InlineKeyboardButton("📋 نسخ الرابط", callback_data="copy_referral")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="back")]
+    ]
+    await q.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def copy_referral(update: Update, context):
+    q = update.callback_query
+    await q.answer("تم نسخ الرابط! أرسله لأصدقائك ✅", show_alert=True)
+
+async def menu_policy(update: Update, context):
+    q = update.callback_query
+    await q.answer()
+    text = (
+        "⚖️ **سياسة الاستخدام وإخلاء المسؤولية** ⚖️\n\n"
+        "1️⃣ **المسؤولية:** المستخدم هو المسؤول الوحيد عن المحتوى الذي يقوم بتحميله أو مشاركته.\n"
+        "2️⃣ **حقوق النشر:** يُمنع تحميل المواد المحمية بحقوق الطبع والنشر دون إذن مسبق.\n"
+        "3️⃣ **الخصوصية:** لا نقوم بتخزين الملفات بعد إرسالها للمستخدم.\n"
+        f"4️⃣ **الإبلاغ:** للشكاوى أو الاستفسارات، تواصل مع المشرف {ADMIN_USERNAME}\n\n"
+        f"📩 {ADMIN_USERNAME}"
+    )
+    await q.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="back")]]))
+
+async def back(update: Update, context):
+    q = update.callback_query
+    await q.answer()
+    await q.edit_message_text("🏠 **القائمة الرئيسية**", reply_markup=await main_menu(), parse_mode="Markdown")
+
 # ======================== معالج الروابط وجودة التحميل ========================
 async def handle_link(update: Update, context):
     uid = update.effective_user.id
@@ -443,16 +494,12 @@ async def quality_callback(update: Update, context):
     try:
         file_path = await download_video(url, quality)
         with open(file_path, "rb") as video:
-            caption = "✅ **تم التحميل بنجاح!**\n\n"
-            if is_vip(uid):
-                caption += "⭐ أنت مشترك VIP – تحميل غير محدود"
-            else:
-                caption += f"📊 تبقت لك {get_remaining_downloads(uid)} تحميلات اليوم\n⭐ اشترك VIP لإزالة الحدود والإعلانات"
-            await q.message.reply_video(video, caption=caption, parse_mode="Markdown")
+            await q.message.reply_video(video, caption="✅ **تم التحميل بنجاح!**", parse_mode="Markdown")
         os.remove(file_path)
         if not is_vip(uid):
             increment_daily_count(uid)
-        await send_ad(uid, context)
+        # **إرسال الرسالة الدعائية للقناة بعد كل تحميل ناجح**
+        await send_promotion(uid, context)
     except Exception as e:
         error_msg = str(e)[:150]
         logger.error(f"Download error: {e}")
@@ -493,14 +540,16 @@ async def stats(update: Update, context):
     )
     await update.message.reply_text(text, parse_mode="Markdown")
 
-# ======================== التشغيل ========================
+# ======================== التشغيل الرئيسي ========================
 def main():
     app = Application.builder().token(TOKEN).build()
+
+    # الأوامر النصية
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("activate_vip", activate_vip))
     app.add_handler(CommandHandler("stats", stats))
 
-    # أزرار القائمة
+    # أزرار القائمة الرئيسية
     app.add_handler(CallbackQueryHandler(menu_download, pattern="^menu_download$"))
     app.add_handler(CallbackQueryHandler(menu_usage, pattern="^menu_usage$"))
     app.add_handler(CallbackQueryHandler(menu_vip, pattern="^menu_vip$"))
@@ -509,7 +558,7 @@ def main():
     app.add_handler(CallbackQueryHandler(back, pattern="^back$"))
     app.add_handler(CallbackQueryHandler(copy_referral, pattern="^copy_referral$"))
 
-    # لوحة الدفع
+    # أزرار الدفع (تم إصلاحها)
     app.add_handler(CallbackQueryHandler(vip_payment_menu, pattern="^vip_payment_menu$"))
     app.add_handler(CallbackQueryHandler(pay_stars, pattern="^pay_stars$"))
     app.add_handler(CallbackQueryHandler(pay_vodafone, pattern="^pay_vodafone$"))
@@ -524,7 +573,7 @@ def main():
     # استقبال صور الإيصالات
     app.add_handler(MessageHandler(filters.PHOTO, handle_receipt_photo))
 
-    # جودة التحميل والروابط
+    # التحميل والجودة
     app.add_handler(CallbackQueryHandler(quality_callback, pattern="^quality_(best|worst)$"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link))
 
