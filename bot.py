@@ -4,7 +4,7 @@ import random
 import sqlite3
 from datetime import datetime, timedelta
 import yt_dlp
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
 TOKEN = "8606881282:AAFUnul-fEQI2Y6JPnCFV9dxTDaV8n0onT4"
@@ -52,7 +52,6 @@ def can_download(user_id):
         return True
     return get_daily_downloads(user_id) < 5
 
-# ---------- إعلانات ----------
 ADS = ["📢 اشترك في قناتنا @YourChannel", "💎 باقات VIP تبدأ من 1$", "🔥 تحميل غير محدود مع VIP"]
 
 async def send_ad(user_id, context):
@@ -84,99 +83,157 @@ async def download_video(url, quality="best"):
                 filename = os.path.join("downloads", max([os.path.join("downloads", f) for f in files], key=os.path.getctime))
         return filename
 
-# ---------- القائمة الدائمة أسفل الشاشة (الأزرار الثابتة) ----------
-def reply_keyboard():
+# ---------- القائمة الرئيسية (Inline Keyboard) ----------
+async def main_menu():
     keyboard = [
-        [KeyboardButton("📥 تحميل فيديو"), KeyboardButton("⭐ باقات VIP")],
-        [KeyboardButton("📊 استهلاكي"), KeyboardButton("🌐 المنصات")],
-        [KeyboardButton("⚖️ سياسة"), KeyboardButton("ℹ️ معلومات")]
+        [InlineKeyboardButton("📥 تحميل فيديو", callback_data="menu_download")],
+        [InlineKeyboardButton("⭐ باقات VIP", callback_data="menu_vip"), InlineKeyboardButton("📊 استهلاكي اليومي", callback_data="menu_usage")],
+        [InlineKeyboardButton("🌐 المنصات المدعومة", callback_data="menu_supported"), InlineKeyboardButton("⚖️ سياسة الاستخدام", callback_data="menu_policy")],
+        [InlineKeyboardButton("ℹ️ معلومات البوت", callback_data="menu_info")]
     ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    return InlineKeyboardMarkup(keyboard)
 
 # ---------- أمر /start ----------
 async def start(update, context):
     user = update.effective_user
     name = user.first_name or "صديقي"
-    msg = f"🎬 أهلاً {name} في بوت التحميل الشامل!\n\n📥 أرسل رابط فيديو من تيك توك، فيسبوك، تويتر، يوتيوب، انستجرام.\n📊 المجاني: 5 تحميلات/يوم\n⭐ VIP: غير محدود\n\n⚠️ أنت المسؤول عن المحتوى."
-    await update.message.reply_text(msg, reply_markup=reply_keyboard())
+    msg = (
+        f"🎬 **أهلاً بك {name} في بوت التحميل الشامل** 🎬\n\n"
+        "📥 **أرسل رابط فيديو من:**\n"
+        "✅ تيك توك | ✅ فيسبوك | ✅ تويتر\n"
+        "✅ يوتيوب | ✅ انستجرام (ريلز، استوريهات عامة)\n\n"
+        "📊 **المستخدم المجاني:** 5 تحميلات يومياً\n"
+        "⭐ **VIP:** تحميل غير محدود + بدون إعلانات + جودة عالية\n\n"
+        "⚠️ **تنبيه:** أنت المسؤول الوحيد عن المحتوى الذي تقوم بتحميله.\n\n"
+        "اختر من القائمة أدناه:"
+    )
+    await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=await main_menu())
 
-# ---------- معالج الأزرار الدائمة ----------
-async def handle_buttons(update, context):
-    text = update.message.text
-    uid = update.effective_user.id
+# ---------- القوائم الفرعية ----------
+async def menu_download(update, context):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "📥 **أرسل رابط الفيديو الآن**\n\nمثال: https://www.tiktok.com/@user/video/123456789\n\nلإلغاء العملية اضغط /start",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="main_menu")]])
+    )
 
-    if text == "📥 تحميل فيديو":
-        await update.message.reply_text("أرسل رابط الفيديو.", reply_markup=reply_keyboard())
-
-    elif text == "⭐ باقات VIP":
-        if is_vip(uid):
-            c.execute("SELECT expiry_date FROM vip WHERE user_id=?", (uid,))
-            exp = c.fetchone()[0]
-            await update.message.reply_text(f"✅ أنت VIP حتى {exp}", reply_markup=reply_keyboard())
-        else:
-            await update.message.reply_text(
-                "⭐ **باقات VIP** ⭐\n\n• أسبوعي: 1$\n• شهري: 3$\n• سنوي: 25$\n\n"
-                f"💰 الدفع: فودافون كاش 0123456789 أو إنستا باي instapay@example.com\n"
-                f"📩 بعد الدفع أرسل الإيصال لـ {ADMIN_USERNAME}\n🔸 تجربة: /activate_vip_test",
-                parse_mode="Markdown", reply_markup=reply_keyboard()
-            )
-
-    elif text == "📊 استهلاكي":
-        if is_vip(uid):
-            await update.message.reply_text("⭐ لا حدود للتحميل (VIP).", reply_markup=reply_keyboard())
-        else:
-            used = get_daily_downloads(uid)
-            rem = 5 - used
-            await update.message.reply_text(f"📊 اليوم: {used}/5 تحميلات\nمتبقي: {rem}", reply_markup=reply_keyboard())
-
-    elif text == "🌐 المنصات":
-        await update.message.reply_text(
-            "🌐 المدعومة:\n✅ تيك توك\n✅ فيسبوك\n✅ تويتر\n✅ يوتيوب\n✅ انستجرام (ريلز، استوريهات عامة)",
-            reply_markup=reply_keyboard()
+async def menu_vip(update, context):
+    query = update.callback_query
+    await query.answer()
+    uid = query.from_user.id
+    if is_vip(uid):
+        c.execute("SELECT expiry_date FROM vip WHERE user_id=?", (uid,))
+        exp = c.fetchone()[0]
+        text = f"✅ **أنت مشترك VIP حتى {exp}**\nشكراً لدعمك! 🎉"
+    else:
+        text = (
+            "⭐ **باقات VIP الاحترافية** ⭐\n\n"
+            "• **أسبوعي:** 1$ (أو 2 نجوم تليجرام)\n"
+            "• **شهري:** 3$ (أو 5 نجوم تليجرام)\n"
+            "• **سنوي:** 25$ (توفير 11$)\n\n"
+            "💳 **طرق الدفع المتاحة:**\n"
+            "⭐ نجوم تليجرام\n📱 فودافون كاش: 0123456789\n🏦 إنستا باي: instapay@example.com\n\n"
+            f"🔹 **بعد الدفع، أرسل الإيصال مباشرة إلى المشرف:** {ADMIN_USERNAME}\n"
+            "🔸 **للتجربة:** استخدم الأمر `/activate_vip_test` (تجربة ساعة واحدة)"
         )
+    await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="main_menu")]]))
 
-    elif text == "⚖️ سياسة":
-        await update.message.reply_text(
-            "⚖️ **سياسة الاستخدام**\n\n• أنت المسؤول الوحيد عن المحتوى.\n• لا نخزّن الملفات بعد الإرسال.\n• حقوق النشر محفوظة لأصحابها.\n"
-            f"📩 للشكاوى: {ADMIN_USERNAME}",
-            parse_mode="Markdown", reply_markup=reply_keyboard()
-        )
+async def menu_usage(update, context):
+    query = update.callback_query
+    await query.answer()
+    uid = query.from_user.id
+    if is_vip(uid):
+        text = "⭐ **أنت مشترك VIP** – لا حدود للتحميل اليومي."
+    else:
+        used = get_daily_downloads(uid)
+        rem = 5 - used
+        text = f"📊 **استخدمت اليوم {used} من 5 تحميلات مجانية.**\nمتبقي: {rem} تحميل.\n\nلرفع الحد، اشترك في VIP."
+    await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="main_menu")]]))
 
-    elif text == "ℹ️ معلومات":
-        await update.message.reply_text(
-            f"ℹ️ **{BOT_USERNAME}**\nالإصدار 3.0\nالمطور: {ADMIN_USERNAME}\nيعمل 24/7",
-            parse_mode="Markdown", reply_markup=reply_keyboard()
-        )
+async def menu_supported(update, context):
+    query = update.callback_query
+    await query.answer()
+    text = (
+        "🌐 **المنصات المدعومة حالياً** 🌐\n\n"
+        "• **تيك توك** - فيديوهات عادية\n"
+        "• **فيسبوك** - فيديوهات عامة\n"
+        "• **تويتر / X** - فيديوهات داخل التغريدات\n"
+        "• **يوتيوب** - فيديوهات عادية وقصيرة (Short)\n"
+        "• **انستجرام** - منشورات، ريلز، استوريهات عامة\n\n"
+        "🚧 **قريباً:** تحويل الفيديو إلى MP3 للمشتركين VIP."
+    )
+    await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="main_menu")]]))
 
-# ---------- استقبال الروابط العادية (لتحميل الفيديو) ----------
+async def menu_policy(update, context):
+    query = update.callback_query
+    await query.answer()
+    text = (
+        "⚖️ **سياسة الاستخدام وإخلاء المسؤولية** ⚖️\n\n"
+        "1️⃣ **المسؤولية:** المستخدم هو المسؤول الوحيد عن أي محتوى يقوم بتحميله أو مشاركته.\n"
+        "2️⃣ **حقوق النشر:** هذا البوت لا يشجع على انتهاك حقوق الملكية الفكرية. يُمنع استخدامه لتحميل المواد المحمية دون إذن.\n"
+        "3️⃣ **الخصوصية:** لا نقوم بتخزين الملفات التي يتم تحميلها أو سجلات المستخدمين الدائمة.\n"
+        "4️⃣ **الإبلاغ:** في حال تلقي أي شكوى قانونية موثقة، سنقوم بحظر البوت أو تقييد الوصول.\n"
+        "5️⃣ **التوفر:** قد يتعرض البوت للتوقف بسبب تحديثات أو تغيير في سياسات منصات التواصل.\n\n"
+        f"📩 **للاستفسارات أو الإبلاغ:** {ADMIN_USERNAME}"
+    )
+    await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="main_menu")]]))
+
+async def menu_info(update, context):
+    query = update.callback_query
+    await query.answer()
+    text = (
+        "ℹ️ **معلومات البوت** ℹ️\n\n"
+        f"• **الاسم:** `{BOT_USERNAME}`\n"
+        "• **الإصدار:** 3.0 (Pro)\n"
+        f"• **المطور والمشرف:** {ADMIN_USERNAME}\n"
+        "• **الهدف:** توفير أداة تحميل سريعة ومجانية مع خيار VIP لدعم التطوير.\n"
+        "• **اللغات المدعومة:** العربية\n"
+        "• **الاستضافة:** خوادم عالية الأداء – تشغيل 24/7\n"
+        "• **تاريخ الإطلاق:** مايو 2026\n\n"
+        "⭐ **لشراء VIP أو للدعم الفني:** تواصل مع المشرف بالضغط على اسمه أعلاه."
+    )
+    await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="main_menu")]]))
+
+async def back_to_main(update, context):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "🏠 **القائمة الرئيسية**\nاختر أحد الخيارات:",
+        reply_markup=await main_menu(),
+        parse_mode="Markdown"
+    )
+
+# ---------- معالج الروابط وجودة التحميل ----------
 async def handle_link(update, context):
     uid = update.effective_user.id
     url = update.message.text.strip()
     platform = detect_platform(url)
 
     if platform == "غير معروف":
-        await update.message.reply_text("❌ رابط غير مدعوم. أرسل رابطاً صحيحاً.", reply_markup=reply_keyboard())
+        await update.message.reply_text("❌ رابط غير مدعوم. أرسل رابطاً من تيك توك، فيسبوك، تويتر، يوتيوب أو انستجرام.\nاستخدم /start للقائمة الرئيسية.")
         return
 
     if not can_download(uid):
-        await update.message.reply_text("⚠️ انتهت تحميلات اليوم المجانية. اشترك في VIP.", reply_markup=reply_keyboard())
+        await update.message.reply_text("⚠️ استنفدت الـ5 تحميلات المجانية اليومية. اشترك في VIP عبر القائمة الرئيسية.")
         return
 
     context.user_data['pending_url'] = url
     keyboard = [
         [InlineKeyboardButton("🎥 جودة عالية", callback_data="best")],
         [InlineKeyboardButton("📱 جودة منخفضة", callback_data="worst")],
-        [InlineKeyboardButton("🔙 إلغاء", callback_data="cancel")]
+        [InlineKeyboardButton("🔙 إلغاء", callback_data="cancel_quality")]
     ]
-    await update.message.reply_text(f"📌 المنصة: {platform}\nاختر الجودة:", reply_markup=InlineKeyboardMarkup(keyboard))
+    await update.message.reply_text(f"📌 **المنصة:** {platform}\nاختر جودة التحميل:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
-async def quality(update, context):
+async def quality_callback(update, context):
     query = update.callback_query
     await query.answer()
     uid = query.from_user.id
 
-    if query.data == "cancel":
-        await query.edit_message_text("❌ تم الإلغاء.")
+    if query.data == "cancel_quality":
+        await query.edit_message_text("❌ تم إلغاء التحميل.")
         return
 
     url = context.user_data.get('pending_url')
@@ -184,21 +241,23 @@ async def quality(update, context):
         await query.edit_message_text("انتهت صلاحية الرابط، أرسله مجدداً.")
         return
 
-    quality_type = "best" if query.data == "best" else "worst"
+    q = "best" if query.data == "best" else "worst"
     if not can_download(uid):
-        await query.edit_message_text("⚠️ تجاوزت حد التحميل.")
+        await query.edit_message_text("⚠️ تجاوزت حد التحميل اليومي.")
         return
 
-    await query.edit_message_text("⏳ جاري التحميل...")
+    await query.edit_message_text("⏳ جاري التحميل... قد يستغرق بضع ثوانٍ.")
     try:
-        path = await download_video(url, quality_type)
+        path = await download_video(url, q)
         with open(path, 'rb') as vid:
-            await query.message.reply_video(vid, caption="✅ تم بنجاح!")
+            await query.message.reply_video(vid, caption="✅ تم التحميل بنجاح!\nلرفع الحدود والإعلانات اشترك في VIP.")
         os.remove(path)
         increment_daily_downloads(uid)
         await send_ad(uid, context)
+        # عرض القائمة الرئيسية بعد التحميل
+        await query.message.reply_text("🏠 **القائمة الرئيسية**", reply_markup=await main_menu(), parse_mode="Markdown")
     except Exception as e:
-        await query.message.reply_text(f"❌ خطأ: {str(e)[:100]}")
+        await query.message.reply_text(f"❌ فشل التحميل: {str(e)[:100]}")
     finally:
         context.user_data.pop('pending_url', None)
 
@@ -207,16 +266,25 @@ async def test_vip(update, context):
     exp = (datetime.now() + timedelta(hours=1)).strftime("%Y-%m-%d")
     c.execute("INSERT OR REPLACE INTO vip (user_id, expiry_date) VALUES (?, ?)", (uid, exp))
     conn.commit()
-    await update.message.reply_text("✅ VIP تجريبي لمدة ساعة (للاختبار).")
+    await update.message.reply_text("✅ تم تفعيل VIP تجريبي لمدة ساعة (للاختبار فقط).")
 
 def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("activate_vip_test", test_vip))
-    app.add_handler(MessageHandler(filters.Regex('^(📥 تحميل فيديو|⭐ باقات VIP|📊 استهلاكي|🌐 المنصات|⚖️ سياسة|ℹ️ معلومات)$'), handle_buttons))
+    # قوائم الدردشة
+    app.add_handler(CallbackQueryHandler(menu_download, pattern="^menu_download$"))
+    app.add_handler(CallbackQueryHandler(menu_vip, pattern="^menu_vip$"))
+    app.add_handler(CallbackQueryHandler(menu_usage, pattern="^menu_usage$"))
+    app.add_handler(CallbackQueryHandler(menu_supported, pattern="^menu_supported$"))
+    app.add_handler(CallbackQueryHandler(menu_policy, pattern="^menu_policy$"))
+    app.add_handler(CallbackQueryHandler(menu_info, pattern="^menu_info$"))
+    app.add_handler(CallbackQueryHandler(back_to_main, pattern="^main_menu$"))
+    # معالج الروابط وجودة التحميل
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link))
-    app.add_handler(CallbackQueryHandler(quality, pattern="^(best|worst|cancel)$"))
-    print("✅ البوت يعمل مع قائمة أسفل الأزرار وجميع الوظائف.")
+    app.add_handler(CallbackQueryHandler(quality_callback, pattern="^(best|worst|cancel_quality)$"))
+
+    print("✅ البوت يعمل مع أزرار داخل الدردشة (بدون قائمة سفلية) ومعلومات وسياسة غنية.")
     app.run_polling()
 
 if __name__ == "__main__":
