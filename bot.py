@@ -23,9 +23,9 @@ from telegram.ext import (
 # -------------------- الإعدادات --------------------
 TOKEN = "7967186531:AAF0e9uU8uaD8ZYw9iYsGVsbKjM92Hofl1M"
 ADMIN_USERNAME = "@Mac_0980"
-BOT_USERNAME = "Down1lodBot"
+BOT_USERNAME = "ShamelDownloaderBot"
 ADMIN_ID = 7799287060
-BOT_VERSION = "9.0.2"
+BOT_VERSION = "9.0.3"
 DEFAULT_DAILY_LIMIT = 5
 
 VODAFONE_NUMBER = "01131384851"
@@ -384,6 +384,7 @@ async def advanced_stats(update: Update, context):
 
 # -------------------- معالج الأزرار الرئيسي --------------------
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """معالج الأزرار - يلتقط فقط الضغط على الأزرار"""
     query = update.callback_query
     await query.answer()
     data = query.data
@@ -502,7 +503,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await query.edit_message_text("⚠️ زر غير معروف، استخدم القائمة الرئيسية.", reply_markup=await main_menu())
 
-# -------------------- استلام الروابط (الإصلاح الرئيسي) --------------------
+# -------------------- معالج الروابط --------------------
 async def handle_link(update: Update, context):
     """معالج الروابط - يتم استدعاؤه عند إرسال المستخدم رابطاً"""
     uid = update.effective_user.id
@@ -510,6 +511,10 @@ async def handle_link(update: Update, context):
     
     print(f"DEBUG: Link received: {url}")
     logger.info(f"Link received from {uid}: {url}")
+    
+    # التحقق من أن الرسالة نص وليست أمر
+    if url.startswith('/'):
+        return
     
     platform = detect_platform(url)
     
@@ -533,7 +538,7 @@ async def handle_link(update: Update, context):
         )
         return
     
-    # حفظ الرابط والمنصة في context
+    # حفظ الرابط والمنصة
     context.user_data["url"] = url
     context.user_data["platform"] = platform
     
@@ -544,14 +549,13 @@ async def handle_link(update: Update, context):
     ]
     
     await update.message.reply_text(
-        f"📌 **المنصة:** {platform}\n\n"
-        f"اختر جودة التحميل:",
+        f"📌 **المنصة:** {platform}\n\nاختر جودة التحميل:",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 async def quality_callback(update: Update, context):
-    """معالج اختيار جودة التحميل"""
+    """معالج اختيار الجودة"""
     query = update.callback_query
     await query.answer()
     uid = query.from_user.id
@@ -663,6 +667,7 @@ async def stats(update: Update, context):
 
 # -------------------- التشغيل --------------------
 def main():
+    # إنشاء التطبيق
     app = Application.builder().token(TOKEN).build()
 
     # الأوامر
@@ -670,9 +675,9 @@ def main():
     app.add_handler(CommandHandler("activate_vip", activate_vip_cmd))
     app.add_handler(CommandHandler("stats", stats))
 
-    # معالج الأزرار
+    # معالج الأزرار (يأتي أولاً)
     app.add_handler(CallbackQueryHandler(button_callback))
-
+    
     # معالج جودة التحميل
     app.add_handler(CallbackQueryHandler(quality_callback, pattern="^quality_"))
 
@@ -680,7 +685,7 @@ def main():
     app.add_handler(PreCheckoutQueryHandler(precheckout_callback))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))
 
-    # معالج الروابط - الأهم
+    # معالج الروابط - يجب أن يأتي بعد معالجات الأزرار
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link))
 
     logger.info(f"✅ البوت يعمل - الإصدار {BOT_VERSION}")
