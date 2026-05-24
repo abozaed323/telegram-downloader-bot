@@ -19,11 +19,11 @@ from telegram.ext import (
 )
 
 # -------------------- الإعدادات --------------------
-TOKEN = "8606881282:AAFUnul-fEQI2Y6JPnCFV9dxTDaV8n0onT4"
+TOKEN = "8640536149:AAFYu8mB_WDxbsgJHIQS4JERgS4_JiJqidI"
 ADMIN_USERNAME = "@Mac_0980"
 BOT_USERNAME = "ShamelDownloaderBot"
 ADMIN_ID = 7799287060
-BOT_VERSION = "8.0.3"
+BOT_VERSION = "8.0.4"
 DEFAULT_DAILY_LIMIT = 5
 
 VODAFONE_NUMBER = "01131384851"
@@ -272,6 +272,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
+    print(f"DEBUG: Button clicked with data: {data}")  # للتصحيح
     logger.info(f"Callback data received: {data}")
 
     if data == "menu_download":
@@ -444,15 +445,16 @@ async def stats(update: Update, context):
 def main():
     app = Application.builder().token(TOKEN).build()
 
+    # الأوامر
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("activate_vip", activate_vip_cmd))
     app.add_handler(CommandHandler("stats", stats))
 
-    # معالج الأزرار الرئيسي (جميع أزرار القائمة)
-    app.add_handler(CallbackQueryHandler(button_callback, pattern="^(menu_download|menu_usage|menu_vip|menu_referrals|menu_policy|back|copy_referral|contact_admin|pay_stars_weekly|pay_stars_monthly|cancel)$"))
+    # معالج الأزرار العام (بدون pattern - يلتقط كل شيء)
+    app.add_handler(CallbackQueryHandler(button_callback))
 
     # معالج جودة التحميل
-    app.add_handler(CallbackQueryHandler(quality_callback, pattern="^quality_(best|worst)$"))
+    app.add_handler(CallbackQueryHandler(quality_callback, pattern="^quality_"))
 
     # معالجات الدفع
     app.add_handler(PreCheckoutQueryHandler(precheckout_callback))
