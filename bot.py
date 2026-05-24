@@ -25,16 +25,13 @@ TOKEN = "7967186531:AAF0e9uU8uaD8ZYw9iYsGVsbKjM92Hofl1M"
 ADMIN_USERNAME = "@Mac_0980"
 BOT_USERNAME = "ShamelDownloaderBot"
 ADMIN_ID = 7799287060
-BOT_VERSION = "9.0.8"
+BOT_VERSION = "9.0.9"
 DEFAULT_DAILY_LIMIT = 5
 
 VODAFONE_NUMBER = "01131384851"
 INSTAPAY_NUMBER = "غير متاح في الوقت الحالي"
 
-# مسار ملف الكوكيز (يمكنك تغييره إذا رفعت ملف cookies.txt)
-COOKIES_FILE = "cookies.txt"
-# إذا كنت تستخدم متصفحاً على السيرفر (نادر) يمكنك تفعيل السطر التالي:
-# BROWSER_COOKIES = "firefox"  # أو "chrome" أو "chromium"
+COOKIES_FILE = "cookies.txt"  # ارفع هذا الملف إلى السيرفر لحل مشكلة يوتيوب
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -235,7 +232,7 @@ async def send_promotion(user_id: int, context: ContextTypes.DEFAULT_TYPE):
     if not is_vip(user_id):
         await context.bot.send_message(chat_id=user_id, text=PROMO_MESSAGE)
 
-# -------------------- تحميل الفيديو (مع دعم الكوكيز) --------------------
+# -------------------- تحميل الفيديو --------------------
 def detect_platform(url: str):
     u = url.lower()
     if "tiktok.com" in u:
@@ -263,13 +260,9 @@ async def download_video(url: str, quality: str = "best") -> str:
         "format": "best" if quality == "best" else "worst",
     }
     
-    # إضافة خيارات الكوكيز إذا كان الملف موجوداً
     if os.path.exists(COOKIES_FILE):
         opts["cookiefile"] = COOKIES_FILE
         logger.info(f"Using cookies file: {COOKIES_FILE}")
-    # إذا كنت تريد استخدام كوكيز المتصفح (يتطلب متصفحاً مثبتاً على السيرفر، نادر)
-    # elif BROWSER_COOKIES:
-    #     opts["cookiesfrombrowser"] = (BROWSER_COOKIES,)
     
     if "/live" in url:
         opts["live_from_start"] = True
@@ -289,10 +282,17 @@ async def download_video(url: str, quality: str = "best") -> str:
             return filename
         except Exception as e:
             error_msg = str(e)
-            # تحقق من خطأ الكوكيز
+            # رسائل مخصصة لأنواع الأخطاء الشائعة
             if "Sign in to confirm" in error_msg or "cookies" in error_msg.lower():
-                raise Exception("يوتيوب يطلب مصادقة. الرجاء إضافة ملف cookies.txt (راجع الشرح أدناه).")
-            raise Exception(f"فشل التحميل: {error_msg}")
+                raise Exception("يوتيوب يطلب مصادقة. الرجاء إضافة ملف cookies.txt (راجع الشرح في دليل البوت).")
+            elif "members only" in error_msg.lower() or "join this channel" in error_msg.lower():
+                raise Exception("هذا الفيديو حصري لأعضاء القناة (Members-only). لا يمكن تحميله بواسطة البوت.")
+            elif "private" in error_msg.lower():
+                raise Exception("هذا الفيديو خاص (Private) ولا يمكن تحميله.")
+            elif "removed" in error_msg.lower() or "deleted" in error_msg.lower():
+                raise Exception("الفيديو تم حذفه أو إزالته.")
+            else:
+                raise Exception(f"فشل التحميل: {error_msg}")
 
 # -------------------- الإحالات --------------------
 async def handle_referral(update: Update, context):
@@ -589,23 +589,10 @@ async def quality_callback(update: Update, context):
     except Exception as e:
         error_msg = str(e)
         logger.error(f"Download error: {e}")
-        # رسالة خاصة ليوتيوب
-        if "يوتيوب يطلب مصادقة" in error_msg or "cookies" in error_msg.lower():
-            await context.bot.send_message(
-                chat_id=uid,
-                text=f"❌ فشل التحميل من يوتيوب\n\nالسبب: يوتيوب يطلب تأكيد أنك لست بوتاً.\n\n"
-                     f"🔧 الحل:\n"
-                     f"1️⃣ استخدم متصفح (Chrome/Firefox) وقم بتسجيل الدخول إلى يوتيوب.\n"
-                     f"2️⃣ ثبّت إضافة (Get cookies.txt) واستخرج الكوكيز.\n"
-                     f"3️⃣ ارفع ملف cookies.txt إلى مجلد البوت على Render.com.\n"
-                     f"4️⃣ أعد تشغيل البوت.\n\n"
-                     f"📞 للدعم: {ADMIN_USERNAME}"
-            )
-        else:
-            await context.bot.send_message(
-                chat_id=uid,
-                text=f"❌ فشل التحميل\n\nالسبب: {error_msg[:200]}\n\nتأكد من:\n• الرابط صحيح\n• الفيديو ليس خاصاً\n\n📞 للدعم: {ADMIN_USERNAME}"
-            )
+        await context.bot.send_message(
+            chat_id=uid,
+            text=f"❌ فشل التحميل\n\nالسبب: {error_msg}\n\nتأكد من:\n• الرابط صحيح\n• الفيديو ليس خاصاً أو محذوفاً\n• الفيديو ليس حصرياً لأعضاء القناة\n\n📞 للدعم: {ADMIN_USERNAME}"
+        )
     finally:
         context.user_data.pop("url", None)
         context.user_data.pop("platform", None)
@@ -663,17 +650,12 @@ def main():
     app.add_handler(CommandHandler("activate_vip", activate_vip_cmd))
     app.add_handler(CommandHandler("stats", stats))
 
-    # معالج جودة التحميل (يجب أن يكون أولاً)
     app.add_handler(CallbackQueryHandler(quality_callback, pattern="^quality_"))
-
-    # معالج باقي الأزرار
     app.add_handler(CallbackQueryHandler(button_callback))
 
-    # معالجات الدفع
     app.add_handler(PreCheckoutQueryHandler(precheckout_callback))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))
 
-    # معالج الروابط
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link))
 
     logger.info(f"✅ البوت يعمل - الإصدار {BOT_VERSION}")
