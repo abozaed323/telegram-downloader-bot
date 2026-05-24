@@ -4,7 +4,10 @@
 import logging
 import os
 import sqlite3
+import asyncio
+import random
 from datetime import datetime, timedelta
+from typing import Dict, List, Optional
 
 import yt_dlp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
@@ -19,11 +22,11 @@ from telegram.ext import (
 )
 
 # -------------------- الإعدادات --------------------
-TOKEN = "8640536149:AAFYu8mB_WDxbsgJHIQS4JERgS4_JiJqidI"
+TOKEN = os.getenv("BOT_TOKEN", "8640536149:AAFYu8mB_WDxbsgJHIQS4JERgS4_JiJqidI")
 ADMIN_USERNAME = "@Mac_0980"
-BOT_USERNAME = "ShamelDownloaderBot"
+BOT_USERNAME = "Down1loderBot"  # غير هذا لاسم البوت الجديد
 ADMIN_ID = 7799287060
-BOT_VERSION = "8.0.4"
+BOT_VERSION = "9.0.0"
 DEFAULT_DAILY_LIMIT = 5
 
 VODAFONE_NUMBER = "01131384851"
@@ -73,6 +76,29 @@ CREATE TABLE IF NOT EXISTS bot_users (
     username TEXT,
     first_name TEXT,
     last_seen TEXT
+)
+""")
+c.execute("""
+CREATE TABLE IF NOT EXISTS favorite_platforms (
+    user_id INTEGER PRIMARY KEY,
+    platform TEXT DEFAULT 'all'
+)
+""")
+c.execute("""
+CREATE TABLE IF NOT EXISTS download_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    platform TEXT,
+    download_date TEXT
+)
+""")
+c.execute("""
+CREATE TABLE IF NOT EXISTS scheduled_downloads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    url TEXT,
+    schedule_time TEXT,
+    status TEXT DEFAULT 'pending'
 )
 """)
 conn.commit()
@@ -158,6 +184,39 @@ def register_user(user_id: int, username: str = None, first_name: str = None):
     c.execute("UPDATE bot_users SET last_seen = CURRENT_TIMESTAMP WHERE user_id=?", (user_id,))
     conn.commit()
 
+def save_download_history(user_id: int, platform: str):
+    today = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    c.execute(
+        "INSERT INTO download_history (user_id, platform, download_date) VALUES (?, ?, ?)",
+        (user_id, platform, today)
+    )
+    conn.commit()
+
+def get_user_stats(user_id: int) -> Dict:
+    c.execute("SELECT COUNT(*) FROM download_history WHERE user_id=?", (user_id,))
+    total_downloads = c.fetchone()[0]
+    c.execute("SELECT platform, COUNT(*) FROM download_history WHERE user_id=? GROUP BY platform ORDER BY COUNT(*) DESC LIMIT 1", (user_id,))
+    favorite = c.fetchone()
+    favorite_platform = favorite[0] if favorite else "لا يوجد"
+    return {"total": total_downloads, "favorite": favorite_platform}
+
+def get_daily_bonus(user_id: int) -> int:
+    today = datetime.now().strftime("%Y-%m-%d")
+    c.execute("SELECT bonus_count FROM daily_bonus WHERE user_id=? AND date=?", (user_id, today))
+    row = c.fetchone()
+    if row:
+        return row[0]
+    return 0
+
+def add_daily_bonus(user_id: int):
+    today = datetime.now().strftime("%Y-%m-%d")
+    c.execute(
+        "INSERT INTO daily_bonus (user_id, date, bonus_count) VALUES (?, ?, 1) "
+        "ON CONFLICT(user_id, date) DO UPDATE SET bonus_count = bonus_count + 1",
+        (user_id, today)
+    )
+    conn.commit()
+
 # -------------------- الترويج --------------------
 PROMO_MESSAGE = (
     "🎁 اشترك في قناتنا 🎁\n"
@@ -234,9 +293,12 @@ async def handle_referral(update: Update, context):
 async def main_menu():
     keyboard = [
         [InlineKeyboardButton("📥 تحميل فيديو", callback_data="menu_download")],
-        [InlineKeyboardButton("📊 استهلاكي", callback_data="menu_usage")],
+        [InlineKeyboardButton("📊 استهلاكي وإحصائيات", callback_data="menu_usage")],
         [InlineKeyboardButton("⭐ الاشتراك VIP", callback_data="menu_vip")],
         [InlineKeyboardButton("🔗 الإحالات", callback_data="menu_referrals")],
+        [InlineKeyboardButton("🎁 المكافآت اليومية", callback_data="menu_daily_bonus")],
+        [InlineKeyboardButton("📅 تحميل مجدول", callback_data="menu_scheduled")],
+        [InlineKeyboardButton("⚙️ الإعدادات", callback_data="menu_settings")],
         [InlineKeyboardButton("⚖️ سياسة الاستخدام", callback_data="menu_policy")],
         [InlineKeyboardButton("❌ إلغاء", callback_data="cancel")],
     ]
@@ -267,12 +329,165 @@ async def start(update: Update, context):
     )
     await update.message.reply_text(text, reply_markup=await main_menu())
 
+# -------------------- الميزة 1: المكافآت اليومية --------------------
+async def daily_bonus(update: Update, context):
+    query = update.callback_query
+    await query.answer()
+    uid = query.from_user.id
+    
+    today = datetime.now().strftime("%Y-%m-%d")
+    c.execute("SELECT bonus_count FROM daily_bonus WHERE user_id=? AND date=?", (uid, today))
+    row = c.fetchone()
+    
+    if row:
+        bonus_count = row[0]
+        if bonus_count >= 3:
+            text = "⚠️ لقد حصلت على مكافآتك اليومية الثلاثة اليوم! عد غداً لمزيد من المكافآت."
+        else:
+            bonus_amount = random.randint(1, 3)
+            # منح تحميلات إضافية
+            for _ in range(bonus_amount):
+                increment_daily_count(uid)
+                increment_daily_count(uid)  # عكسياً لأن increment_daily_count يزيد العدد
+            text = f"🎁 تهانينا! حصلت على {bonus_amount} تحميلات إضافية اليوم!"
+            add_daily_bonus(uid)
+    else:
+        bonus_amount = random.randint(1, 5)
+        for _ in range(bonus_amount):
+            increment_daily_count(uid)
+            increment_daily_count(uid)
+        text = f"🎁 مكافأة الترحيب! حصلت على {bonus_amount} تحميلات إضافية!"
+        add_daily_bonus(uid)
+    
+    keyboard = [[InlineKeyboardButton("🔙 رجوع", callback_data="back")]]
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+# -------------------- الميزة 2: التحميل المجدول --------------------
+async def scheduled_download_menu(update: Update, context):
+    query = update.callback_query
+    await query.answer()
+    
+    keyboard = [
+        [InlineKeyboardButton("➕ إضافة تحميل مجدول", callback_data="schedule_add")],
+        [InlineKeyboardButton("📋 قائمة التحميلات المجدولة", callback_data="schedule_list")],
+        [InlineKeyboardButton("🗑️ حذف تحميل مجدول", callback_data="schedule_delete")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="back")]
+    ]
+    await query.edit_message_text(
+        "📅 التحميل المجدول\n\nيمكنك جدولة تحميل الفيديوهات في وقت محدد.",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def schedule_add(update: Update, context):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "⏰ أرسل رابط الفيديو ثم الوقت (مثال: 2024-12-31 15:30:00)\n\n"
+        "لإلغاء العملية، اضغط /cancel",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="menu_scheduled")]])
+    )
+    context.user_data["waiting_for_schedule"] = True
+
+# -------------------- الميزة 3: الإحصائيات المتقدمة --------------------
+async def advanced_stats(update: Update, context):
+    query = update.callback_query
+    await query.answer()
+    uid = query.from_user.id
+    
+    stats = get_user_stats(uid)
+    total_downloads = stats["total"]
+    favorite = stats["favorite"]
+    
+    c.execute("SELECT COUNT(*) FROM download_history WHERE user_id=? AND download_date LIKE ?", (uid, f"{datetime.now().strftime('%Y-%m-%d')}%"))
+    today_downloads = c.fetchone()[0]
+    
+    c.execute("SELECT COUNT(*) FROM referrals WHERE referrer_id=? AND is_activated=1", (uid,))
+    active_referrals = c.fetchone()[0]
+    
+    text = (
+        f"📊 **إحصائياتك الشخصية**\n\n"
+        f"📥 إجمالي التحميلات: {total_downloads}\n"
+        f"📈 تحميلات اليوم: {today_downloads}\n"
+        f"⭐ المنصة المفضلة: {favorite}\n"
+        f"🔗 مدعوون نشطون: {active_referrals}\n"
+        f"👑 مشترك VIP: {'نعم' if is_vip(uid) else 'لا'}\n"
+    )
+    
+    keyboard = [[InlineKeyboardButton("🔙 رجوع", callback_data="back")]]
+    await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+
+# -------------------- الميزة 4: الإعدادات (المنصة المفضلة) --------------------
+async def settings_menu(update: Update, context):
+    query = update.callback_query
+    await query.answer()
+    uid = query.from_user.id
+    
+    c.execute("SELECT platform FROM favorite_platforms WHERE user_id=?", (uid,))
+    row = c.fetchone()
+    current = row[0] if row else "all"
+    
+    keyboard = [
+        [InlineKeyboardButton("🎯 يوتيوب", callback_data="set_platform_youtube")],
+        [InlineKeyboardButton("🎯 تيك توك", callback_data="set_platform_tiktok")],
+        [InlineKeyboardButton("🎯 فيسبوك", callback_data="set_platform_facebook")],
+        [InlineKeyboardButton("🎯 انستجرام", callback_data="set_platform_instagram")],
+        [InlineKeyboardButton("🎯 تويتر", callback_data="set_platform_twitter")],
+        [InlineKeyboardButton("🌐 الكل", callback_data="set_platform_all")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="back")]
+    ]
+    
+    text = f"⚙️ الإعدادات\n\nالمنصة المفضلة حالياً: {current}\n\nاختر منصتك المفضلة للحصول على توصيات مخصصة:"
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def set_platform(update: Update, context):
+    query = update.callback_query
+    await query.answer()
+    uid = query.from_user.id
+    platform = query.data.replace("set_platform_", "")
+    
+    c.execute("INSERT OR REPLACE INTO favorite_platforms (user_id, platform) VALUES (?, ?)", (uid, platform))
+    conn.commit()
+    
+    await query.edit_message_text(
+        f"✅ تم تعيين المنصة المفضلة إلى: {platform}\n\nسيتم تخصيص التوصيات بناءً على اختيارك.",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="menu_settings")]])
+    )
+
+# -------------------- الميزة 5: التوصيات والمحتوى المقترح --------------------
+async def recommendations(update: Update, context):
+    query = update.callback_query
+    await query.answer()
+    uid = query.from_user.id
+    
+    c.execute("SELECT platform FROM favorite_platforms WHERE user_id=?", (uid,))
+    row = c.fetchone()
+    platform = row[0] if row else "all"
+    
+    recommendations_dict = {
+        "youtube": "🎬 قنوات يوتيوب مقترحة:\n• قناة الألعاب\n• قناة التعليم\n• قناة الطبخ",
+        "tiktok": "🎵 حسابات تيك توك مقترحة:\n• حسابات كوميدية\n• حسابات تعليمية\n• حسابات فنون",
+        "facebook": "📘 صفحات فيسبوك مقترحة:\n• صفحات أخبار\n• صفحات ترفيه\n• صفحات تقنية",
+        "instagram": "📸 حسابات انستجرام مقترحة:\n• مصورين محترفين\n• مؤثرين\n• علامات تجارية",
+        "twitter": "🐦 حسابات تويتر مقترحة:\n• أخبار عاجلة\n• محللين سياسيين\n• تقنيين",
+        "all": "🌟 محتوى مقترح عام:\n• أفضل فيديوهات الأسبوع\n• فيديوهات تعليمية مميزة\n• محتوى ترفيهي حصري"
+    }
+    
+    text = recommendations_dict.get(platform, recommendations_dict["all"])
+    text += "\n\n📌 سيتم تحديث التوصيات يومياً!"
+    
+    keyboard = [
+        [InlineKeyboardButton("🔄 تحديث التوصيات", callback_data="recommendations")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="back")]
+    ]
+    
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
 # -------------------- معالج الأزرار الرئيسي --------------------
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
-    print(f"DEBUG: Button clicked with data: {data}")  # للتصحيح
+    print(f"DEBUG: Button clicked with data: {data}")
     logger.info(f"Callback data received: {data}")
 
     if data == "menu_download":
@@ -290,7 +505,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             used = get_daily_count(uid)
             remain = DEFAULT_DAILY_LIMIT - used
             text = f"📊 استخدمت اليوم {used}/{DEFAULT_DAILY_LIMIT}\n📈 المتبقي: {remain} تحميلات\n\nلرفع الحد، اشترك في VIP"
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="back")]]))
+        
+        stats_btn = [[InlineKeyboardButton("📈 إحصائيات متقدمة", callback_data="advanced_stats")]]
+        stats_btn.append([InlineKeyboardButton("🔙 رجوع", callback_data="back")])
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(stats_btn))
     elif data == "menu_vip":
         uid = query.from_user.id
         if is_vip(uid):
@@ -305,7 +523,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("📞 تواصل مع المشرف", callback_data="contact_admin")],
                 [InlineKeyboardButton("🔙 رجوع", callback_data="back")]
             ]
-            text = "⭐ باقات الاشتراك VIP ⭐\n\n• أسبوعي: 1$ - 7 أيام\n• شهري: 3$ - 30 يوماً\n• سنوي: 25$ - 365 يوماً\n\nمميزات VIP:\n✓ تحميل غير محدود\n✓ بدون إعلانات\n✓ جودة عالية\n\nاختر طريقة الاشتراك:"
+            text = "⭐ باقات الاشتراك VIP ⭐\n\n• أسبوعي: 1$ - 7 أيام\n• شهري: 3$ - 30 يوماً\n• سنوي: 25$ - 365 يوماً\n\nمميزات VIP:\n✓ تحميل غير محدود\n✓ بدون إعلانات\n✓ جودة عالية\n✓ أولوية في التحميل\n✓ دعم فني مخصص\n\nاختر طريقة الاشتراك:"
             await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
     elif data == "menu_referrals":
         uid = query.from_user.id
@@ -315,17 +533,40 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         c.execute("SELECT COUNT(*) FROM referrals WHERE referrer_id=? AND is_activated=1", (uid,))
         active = c.fetchone()[0]
         text = (
-            f"🔗 نظام الإحالات\n\nرابط الإحالة الخاص بك:\n{link}\n\nإحصائياتك:\nالمدعوين: {total}\nنشطون: {active}\n\nكل 5 نشطين = يوم VIP مجاني\nكل 10 نشطين = أسبوع VIP مجاني"
+            f"🔗 نظام الإحالات\n\nرابط الإحالة الخاص بك:\n`{link}`\n\nإحصائياتك:\nالمدعوين: {total}\nنشطون: {active}\n\nكل 5 نشطين = يوم VIP مجاني\nكل 10 نشطين = أسبوع VIP مجاني\n\nللاستفسار: {ADMIN_USERNAME}"
         )
-        keyboard = [[InlineKeyboardButton("📋 نسخ الرابط", callback_data="copy_referral")], [InlineKeyboardButton("🔙 رجوع", callback_data="back")]]
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        keyboard = [
+            [InlineKeyboardButton("📋 نسخ الرابط", callback_data="copy_referral")],
+            [InlineKeyboardButton("🔙 رجوع", callback_data="back")]
+        ]
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+    elif data == "copy_referral":
+        uid = query.from_user.id
+        link = f"https://t.me/{BOT_USERNAME}?start=ref_{uid}"
+        await query.answer(f"تم نسخ الرابط: {link}", show_alert=True)
+    elif data == "menu_daily_bonus":
+        await daily_bonus(update, context)
+    elif data == "menu_scheduled":
+        await scheduled_download_menu(update, context)
+    elif data == "schedule_add":
+        await schedule_add(update, context)
+    elif data == "schedule_list":
+        await query.edit_message_text("⏳ قائمة التحميلات المجدولة قيد التطوير...", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="menu_scheduled")]]))
+    elif data == "schedule_delete":
+        await query.edit_message_text("🗑️ حذف التحميلات المجدولة قيد التطوير...", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="menu_scheduled")]]))
+    elif data == "menu_settings":
+        await settings_menu(update, context)
+    elif data.startswith("set_platform_"):
+        await set_platform(update, context)
+    elif data == "recommendations":
+        await recommendations(update, context)
+    elif data == "advanced_stats":
+        await advanced_stats(update, context)
     elif data == "menu_policy":
         text = "⚖️ سياسة الاستخدام\n\n1️⃣ المسؤولية على المستخدم.\n2️⃣ يمنع تحميل المواد المحمية.\n3️⃣ لا نخزن الملفات.\n4️⃣ للشكاوى: " + ADMIN_USERNAME
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="back")]]))
     elif data == "back":
         await query.edit_message_text("🏠 القائمة الرئيسية", reply_markup=await main_menu())
-    elif data == "copy_referral":
-        await query.answer("تم نسخ الرابط! ✅", show_alert=True)
     elif data == "contact_admin":
         text = f"📞 للاشتراك عبر فودافون كاش: {VODAFONE_NUMBER}\n💰 أسبوعي 1$، شهري 3$، سنوي 25$\n📌 بعد التحويل تواصل مع {ADMIN_USERNAME} مع الإيصال."
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="menu_vip")]]))
@@ -373,6 +614,7 @@ async def handle_link(update: Update, context):
         await update.message.reply_text("⚠️ استنفدت تحميلات اليوم المجانية. اشترك VIP.")
         return
     context.user_data["url"] = url
+    context.user_data["platform"] = platform
     keyboard = [
         [InlineKeyboardButton("🎥 جودة عالية", callback_data="quality_best")],
         [InlineKeyboardButton("📱 جودة منخفضة", callback_data="quality_worst")],
@@ -386,6 +628,7 @@ async def quality_callback(update: Update, context):
     uid = query.from_user.id
     quality = "best" if query.data == "quality_best" else "worst"
     url = context.user_data.get("url")
+    platform = context.user_data.get("platform", "غير معروف")
     if not url:
         await query.edit_message_text("⚠️ انتهت صلاحية الرابط، أرسله مرة أخرى.")
         return
@@ -400,12 +643,14 @@ async def quality_callback(update: Update, context):
         os.remove(file_path)
         if not is_vip(uid):
             increment_daily_count(uid)
+        save_download_history(uid, platform)
         await send_promotion(uid, context)
         await context.bot.send_message(chat_id=uid, text="🏠 القائمة الرئيسية", reply_markup=await main_menu())
     except Exception as e:
         await context.bot.send_message(chat_id=uid, text=f"❌ فشل التحميل: {str(e)[:150]}")
     finally:
         context.user_data.pop("url", None)
+        context.user_data.pop("platform", None)
 
 # -------------------- الدفع والتحقق --------------------
 async def precheckout_callback(update: Update, context):
@@ -438,8 +683,17 @@ async def stats(update: Update, context):
     total_users = c.execute("SELECT COUNT(*) FROM bot_users").fetchone()[0]
     vip_count = c.execute("SELECT COUNT(*) FROM vip").fetchone()[0]
     today_downloads = c.execute("SELECT COUNT(*) FROM daily_downloads WHERE date=?", (datetime.now().strftime("%Y-%m-%d"),)).fetchone()[0]
-    total_downloads = c.execute("SELECT COUNT(*) FROM daily_downloads").fetchone()[0]
-    await update.message.reply_text(f"📊 إحصائيات\n👥 مستخدمين: {total_users}\n👑 VIP: {vip_count}\n📥 اليوم: {today_downloads}\n📈 إجمالي: {total_downloads}")
+    total_downloads = c.execute("SELECT COUNT(*) FROM download_history").fetchone()[0]
+    total_referrals = c.execute("SELECT COUNT(*) FROM referrals").fetchone()[0]
+    await update.message.reply_text(
+        f"📊 **إحصائيات البوت**\n\n"
+        f"👥 مستخدمين: {total_users}\n"
+        f"👑 VIP: {vip_count}\n"
+        f"📥 تحميلات اليوم: {today_downloads}\n"
+        f"📈 إجمالي التحميلات: {total_downloads}\n"
+        f"🔗 إجمالي الإحالات: {total_referrals}\n"
+        f"🚀 الإصدار: {BOT_VERSION}"
+    )
 
 # -------------------- التشغيل --------------------
 def main():
@@ -450,7 +704,7 @@ def main():
     app.add_handler(CommandHandler("activate_vip", activate_vip_cmd))
     app.add_handler(CommandHandler("stats", stats))
 
-    # معالج الأزرار العام (بدون pattern - يلتقط كل شيء)
+    # معالج الأزرار العام
     app.add_handler(CallbackQueryHandler(button_callback))
 
     # معالج جودة التحميل

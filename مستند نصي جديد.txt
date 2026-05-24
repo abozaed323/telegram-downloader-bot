@@ -1,0 +1,35 @@
+
+git add . && git commit -m "update" && git push origin main
+
+
+فّذ الأوامر كل أمر على حدة:
+
+powershell
+git add .
+powershell
+git commit -m "update"
+powershell
+git push origin main
+📋 أوامر Git الكاملة لرفع الكود (من مجلد المشروع)
+تأكد أولاً أنك في المجلد الصحيح:
+
+powershell
+cd F:\telegram_downloader_bot\telegram-downloader-bot
+ثم نفّذ:
+
+powershell
+git add .
+powershell
+git commit -m "تحديث التوكن وإصلاح الأزرار"
+powershell
+git push origin main
+⚡ بديل سريع (سطر واحد باستخدام ; بدلاً من &&)
+powershell
+git add .; git commit -m "update"; git push origin main
+ملاحظة: استخدام ; يفصل الأوامر في PowerShell بنفس طريقة && في Linux.
+
+🔄 إذا كنت بحاجة لسحب التغييرات أولاً
+powershell
+git pull origin main; git add .; git commit -m "update"; git push origin main
+نفّذ الأوامر أعلنها وأخبرني إذا نجح الرفع.
+
