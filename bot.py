@@ -21,7 +21,7 @@ from telegram.ext import (
 )
 
 # -------------------- الإعدادات --------------------
-TOKEN = "8640536149:AAHRQAkrhf-2g7I5tszUeYSKG6OGmt1nDf0"
+TOKEN = "7967186531:AAF0e9uU8uaD8ZYw9iYsGVsbKjM92Hofl1M"
 ADMIN_USERNAME = "@Mac_0980"
 BOT_USERNAME = "Down1lodBot"
 ADMIN_ID = 7799287060
