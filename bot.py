@@ -23,7 +23,7 @@ TOKEN = "8606881282:AAFUnul-fEQI2Y6JPnCFV9dxTDaV8n0onT4"
 ADMIN_USERNAME = "@Mac_0980"
 BOT_USERNAME = "ShamelDownloaderBot"
 ADMIN_ID = 7799287060
-BOT_VERSION = "8.0.2"
+BOT_VERSION = "8.0.3"
 DEFAULT_DAILY_LIMIT = 5
 
 VODAFONE_NUMBER = "01131384851"
@@ -116,7 +116,6 @@ def activate_vip(user_id: int, days: int):
     expiry = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
     c.execute("INSERT OR REPLACE INTO vip (user_id, expiry_date) VALUES (?, ?)", (user_id, expiry))
     conn.commit()
-    # تفعيل الإحالات
     c.execute("UPDATE referrals SET is_activated = 1 WHERE referred_id = ? AND is_activated = 0", (user_id,))
     conn.commit()
     grant_referral_rewards(user_id)
@@ -250,7 +249,6 @@ async def start(update: Update, context):
     register_user(user_id, user.username, user.first_name)
     await handle_referral(update, context)
 
-    # تفعيل الإحالات إذا كان المستخدم جديداً
     c.execute("SELECT is_activated FROM referrals WHERE referred_id = ?", (user_id,))
     row = c.fetchone()
     if row and row[0] == 0:
@@ -269,7 +267,7 @@ async def start(update: Update, context):
     )
     await update.message.reply_text(text, reply_markup=await main_menu())
 
-# -------------------- معالجات الأزرار --------------------
+# -------------------- معالج الأزرار الرئيسي --------------------
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -446,12 +444,11 @@ async def stats(update: Update, context):
 def main():
     app = Application.builder().token(TOKEN).build()
 
-    # أوامر
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("activate_vip", activate_vip_cmd))
     app.add_handler(CommandHandler("stats", stats))
 
-    # معالج الأزرار الرئيسي (جميع callback_data)
+    # معالج الأزرار الرئيسي (جميع أزرار القائمة)
     app.add_handler(CallbackQueryHandler(button_callback, pattern="^(menu_download|menu_usage|menu_vip|menu_referrals|menu_policy|back|copy_referral|contact_admin|pay_stars_weekly|pay_stars_monthly|cancel)$"))
 
     # معالج جودة التحميل
