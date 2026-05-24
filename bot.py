@@ -25,7 +25,7 @@ TOKEN = "7967186531:AAF0e9uU8uaD8ZYw9iYsGVsbKjM92Hofl1M"
 ADMIN_USERNAME = "@Mac_0980"
 BOT_USERNAME = "ShamelDownloaderBot"
 ADMIN_ID = 7799287060
-BOT_VERSION = "9.0.6"
+BOT_VERSION = "9.0.7"
 DEFAULT_DAILY_LIMIT = 5
 
 VODAFONE_NUMBER = "01131384851"
@@ -260,7 +260,7 @@ async def download_video(url: str, quality: str = "best") -> str:
     if "/live" in url:
         opts["live_from_start"] = True
         opts["format"] = "best[height<=480]"
-    
+
     with yt_dlp.YoutubeDL(opts) as ydl:
         try:
             info = ydl.extract_info(url, download=True)
@@ -323,7 +323,7 @@ async def start(update: Update, context):
     name = user.first_name or "صديقي"
     remaining = get_remaining_downloads(user_id)
     limit_text = "غير محدود 🚀" if remaining == -1 else f"متبقي {remaining} تحميلات اليوم"
-    
+
     text = (
         f"🎬 أهلاً بك {name} في بوت التحميل الشامل 🎬\n\n"
         "📥 أرسل رابط فيديو من:\n"
@@ -341,9 +341,9 @@ async def daily_bonus(update: Update, context):
     query = update.callback_query
     await query.answer()
     uid = query.from_user.id
-    
+
     bonus_count = get_daily_bonus_count(uid)
-    
+
     if bonus_count >= 3:
         text = "⚠️ لقد حصلت على مكافآتك اليومية الثلاثة اليوم!\nعد غداً لمزيد من المكافآت."
     else:
@@ -352,7 +352,7 @@ async def daily_bonus(update: Update, context):
             decrement_daily_count(uid)
         add_daily_bonus(uid)
         text = f"🎁 تهانينا! حصلت على {bonus_amount} تحميلات إضافية اليوم!"
-    
+
     keyboard = [[InlineKeyboardButton("🔙 رجوع", callback_data="back")]]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -361,15 +361,15 @@ async def advanced_stats(update: Update, context):
     query = update.callback_query
     await query.answer()
     uid = query.from_user.id
-    
+
     stats = get_user_stats(uid)
-    
+
     c.execute("SELECT COUNT(*) FROM download_history WHERE user_id=? AND download_date LIKE ?", (uid, f"{datetime.now().strftime('%Y-%m-%d')}%"))
     today_downloads = c.fetchone()[0]
-    
+
     c.execute("SELECT COUNT(*) FROM referrals WHERE referrer_id=? AND is_activated=1", (uid,))
     active_referrals = c.fetchone()[0]
-    
+
     text = (
         f"📊 إحصائياتك الشخصية\n\n"
         f"📥 إجمالي التحميلات: {stats['total']}\n"
@@ -378,11 +378,11 @@ async def advanced_stats(update: Update, context):
         f"🔗 مدعوون نشطون: {active_referrals}\n"
         f"👑 مشترك VIP: {'نعم ✅' if is_vip(uid) else 'لا ❌'}\n"
     )
-    
+
     keyboard = [[InlineKeyboardButton("🔙 رجوع", callback_data="back")]]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
-# -------------------- معالج الأزرار الشامل --------------------
+# -------------------- معالج الأزرار العامة --------------------
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -405,7 +405,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             used = get_daily_count(uid)
             remain = DEFAULT_DAILY_LIMIT - used
             text = f"📊 استخدمت اليوم {used}/{DEFAULT_DAILY_LIMIT}\n📈 المتبقي: {remain} تحميلات\n\nلرفع الحد، اشترك في VIP"
-        
+
         keyboard = [
             [InlineKeyboardButton("📈 إحصائيات متقدمة", callback_data="advanced_stats")],
             [InlineKeyboardButton("🔙 رجوع", callback_data="back")]
@@ -509,13 +509,14 @@ async def handle_link(update: Update, context):
     text = update.message.text.strip()
     if text.startswith('/'):
         return
+    # تحقق بسيط: إذا لم يكن النص يحتوي على روابط، تجاهل
     if not any(x in text.lower() for x in ['http', 'www', '.com', 'tiktok', 'youtube', 'facebook', 'twitter', 'instagram', 'kwai']):
         return
-    
+
     uid = update.effective_user.id
     url = text
     platform = detect_platform(url)
-    
+
     if platform == "غير معروف":
         await update.message.reply_text(
             "❌ الرابط غير مدعوم.\nالمنصات المدعومة:\n✅ تيك توك\n✅ فيسبوك\n✅ تويتر\n✅ يوتيوب\n✅ انستجرام\n✅ كواي (تجريبي)"
@@ -529,10 +530,10 @@ async def handle_link(update: Update, context):
             f"⚠️ استنفدت تحميلات اليوم المجانية!\n📊 استخدمت {get_daily_count(uid)}/{DEFAULT_DAILY_LIMIT}\n\n⭐ اشترك في VIP للتحميل غير المحدود"
         )
         return
-    
+
     context.user_data["url"] = url
     context.user_data["platform"] = platform
-    
+
     keyboard = [
         [InlineKeyboardButton("🎥 جودة عالية", callback_data="quality_best")],
         [InlineKeyboardButton("📱 جودة منخفضة", callback_data="quality_worst")],
@@ -540,6 +541,7 @@ async def handle_link(update: Update, context):
     ]
     await update.message.reply_text(f"📌 المنصة: {platform}\n\nاختر جودة التحميل:", reply_markup=InlineKeyboardMarkup(keyboard))
 
+# -------------------- معالج جودة التحميل --------------------
 async def quality_callback(update: Update, context):
     query = update.callback_query
     await query.answer()
@@ -547,14 +549,14 @@ async def quality_callback(update: Update, context):
     quality = "best" if query.data == "quality_best" else "worst"
     url = context.user_data.get("url")
     platform = context.user_data.get("platform", "غير معروف")
-    
+
     if not url:
         await query.edit_message_text("⚠️ انتهت صلاحية الرابط، أرسله مرة أخرى.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="back")]]))
         return
     if not can_download(uid):
         await query.edit_message_text("⚠️ تجاوزت الحد اليومي للتحميل.\n⭐ اشترك في VIP للاستمرار.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⭐ اشتراك VIP", callback_data="menu_vip")]]))
         return
-    
+
     await query.edit_message_text("⏳ جاري التحميل... قد يستغرق بضع ثوانٍ.")
     try:
         file_path = await download_video(url, quality)
@@ -603,13 +605,13 @@ async def stats(update: Update, context):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("⛔ هذا الأمر للمشرف فقط.")
         return
-    
+
     total_users = c.execute("SELECT COUNT(*) FROM bot_users").fetchone()[0]
     vip_count = c.execute("SELECT COUNT(*) FROM vip").fetchone()[0]
     today_downloads = c.execute("SELECT COUNT(*) FROM daily_downloads WHERE date=?", (datetime.now().strftime("%Y-%m-%d"),)).fetchone()[0]
     total_downloads = c.execute("SELECT COUNT(*) FROM download_history").fetchone()[0]
     total_referrals = c.execute("SELECT COUNT(*) FROM referrals").fetchone()[0]
-    
+
     await update.message.reply_text(
         f"📊 إحصائيات البوت\n\n"
         f"👥 إجمالي المستخدمين: {total_users}\n"
@@ -623,19 +625,25 @@ async def stats(update: Update, context):
 # -------------------- التشغيل --------------------
 def main():
     app = Application.builder().token(TOKEN).build()
-    
+
+    # الأوامر النصية
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("activate_vip", activate_vip_cmd))
     app.add_handler(CommandHandler("stats", stats))
-    
-    app.add_handler(CallbackQueryHandler(button_callback))
+
+    # معالج جودة التحميل (يجب أن يكون أولاً ليلتقط quality_*)
     app.add_handler(CallbackQueryHandler(quality_callback, pattern="^quality_"))
-    
+
+    # معالج باقي الأزرار
+    app.add_handler(CallbackQueryHandler(button_callback))
+
+    # معالجات الدفع
     app.add_handler(PreCheckoutQueryHandler(precheckout_callback))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))
-    
+
+    # معالج الروابط (نصية)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link))
-    
+
     logger.info(f"✅ البوت يعمل - الإصدار {BOT_VERSION}")
     app.run_polling()
 
