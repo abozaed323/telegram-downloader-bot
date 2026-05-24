@@ -25,7 +25,7 @@ TOKEN = "7967186531:AAF0e9uU8uaD8ZYw9iYsGVsbKjM92Hofl1M"
 ADMIN_USERNAME = "@Mac_0980"
 BOT_USERNAME = "ShamelDownloaderBot"
 ADMIN_ID = 7799287060
-BOT_VERSION = "9.0.3"
+BOT_VERSION = "9.0.4"
 DEFAULT_DAILY_LIMIT = 5
 
 VODAFONE_NUMBER = "01131384851"
@@ -382,9 +382,9 @@ async def advanced_stats(update: Update, context):
     keyboard = [[InlineKeyboardButton("🔙 رجوع", callback_data="back")]]
     await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# -------------------- معالج الأزرار الرئيسي --------------------
+# -------------------- معالج الأزرار (مع pattern محدد) --------------------
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """معالج الأزرار - يلتقط فقط الضغط على الأزرار"""
+    """معالج الأزرار - يلتقط فقط callback_data المحددة"""
     query = update.callback_query
     await query.answer()
     data = query.data
@@ -506,15 +506,25 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # -------------------- معالج الروابط --------------------
 async def handle_link(update: Update, context):
     """معالج الروابط - يتم استدعاؤه عند إرسال المستخدم رابطاً"""
+    # التأكد من أن الرسالة نصية وليست أمر أو callback
+    if not update.message or not update.message.text:
+        return
+    
+    text = update.message.text.strip()
+    
+    # تجاهل الأوامر
+    if text.startswith('/'):
+        return
+    
+    # التحقق من أن النص يبدو كرابط (يحتوي على http أو https أو www أو .com)
+    if not ('http' in text or 'www' in text or '.com' in text or 'tiktok' in text or 'youtube' in text):
+        return
+    
     uid = update.effective_user.id
-    url = update.message.text.strip()
+    url = text
     
     print(f"DEBUG: Link received: {url}")
     logger.info(f"Link received from {uid}: {url}")
-    
-    # التحقق من أن الرسالة نص وليست أمر
-    if url.startswith('/'):
-        return
     
     platform = detect_platform(url)
     
@@ -667,7 +677,6 @@ async def stats(update: Update, context):
 
 # -------------------- التشغيل --------------------
 def main():
-    # إنشاء التطبيق
     app = Application.builder().token(TOKEN).build()
 
     # الأوامر
@@ -675,8 +684,8 @@ def main():
     app.add_handler(CommandHandler("activate_vip", activate_vip_cmd))
     app.add_handler(CommandHandler("stats", stats))
 
-    # معالج الأزرار (يأتي أولاً)
-    app.add_handler(CallbackQueryHandler(button_callback))
+    # معالج الأزرار (مع pattern محدد)
+    app.add_handler(CallbackQueryHandler(button_callback, pattern="^(menu_download|menu_usage|menu_vip|menu_referrals|menu_daily_bonus|menu_policy|back|copy_referral|contact_admin|pay_stars_weekly|pay_stars_monthly|cancel|advanced_stats)$"))
     
     # معالج جودة التحميل
     app.add_handler(CallbackQueryHandler(quality_callback, pattern="^quality_"))
@@ -685,7 +694,7 @@ def main():
     app.add_handler(PreCheckoutQueryHandler(precheckout_callback))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))
 
-    # معالج الروابط - يجب أن يأتي بعد معالجات الأزرار
+    # معالج الروابط - يأتي أخيراً ليلتقط كل ما لم يلتقطه الآخرون
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link))
 
     logger.info(f"✅ البوت يعمل - الإصدار {BOT_VERSION}")
