@@ -25,7 +25,7 @@ TOKEN = "7967186531:AAF0e9uU8uaD8ZYw9iYsGVsbKjM92Hofl1M"
 ADMIN_USERNAME = "@Mac_0980"
 BOT_USERNAME = "ShamelDownloaderBot"
 ADMIN_ID = 7799287060
-BOT_VERSION = "9.0.4"
+BOT_VERSION = "9.0.5"
 DEFAULT_DAILY_LIMIT = 5
 
 VODAFONE_NUMBER = "01131384851"
@@ -382,15 +382,15 @@ async def advanced_stats(update: Update, context):
     keyboard = [[InlineKeyboardButton("🔙 رجوع", callback_data="back")]]
     await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# -------------------- معالج الأزرار (مع pattern محدد) --------------------
+# -------------------- معالج الأزرار الشامل --------------------
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """معالج الأزرار - يلتقط فقط callback_data المحددة"""
     query = update.callback_query
     await query.answer()
     data = query.data
     print(f"DEBUG: Button clicked with data: {data}")
     logger.info(f"Callback data received: {data}")
 
+    # قائمة الأزرار مع الإجراءات
     if data == "menu_download":
         await query.edit_message_text(
             "📥 أرسل رابط الفيديو الآن\nلإلغاء العملية، اضغط /start",
@@ -460,11 +460,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await daily_bonus(update, context)
     elif data == "menu_policy":
         text = (
-            "⚖️ **سياسة الاستخدام**\n\n"
-            "1️⃣ المسؤولية على المستخدم.\n"
-            "2️⃣ يمنع تحميل المواد المحمية.\n"
-            "3️⃣ لا نخزن الملفات.\n"
-            f"4️⃣ للشكاوى: {ADMIN_USERNAME}"
+            "⚖️ **سياسة الاستخدام وإخلاء المسؤولية**\n\n"
+            "1️⃣ **المسؤولية:** المستخدم هو المسؤول الوحيد عن المحتوى الذي يقوم بتحميله أو مشاركته.\n\n"
+            "2️⃣ **حقوق النشر:** يمنع تحميل المواد المحمية بحقوق الطبع والنشر دون إذن مسبق.\n\n"
+            "3️⃣ **الخصوصية:** لا نقوم بتخزين الملفات بعد إرسالها للمستخدم.\n\n"
+            f"4️⃣ **الإبلاغ:** للشكاوى أو الاستفسارات، تواصل مع المشرف {ADMIN_USERNAME}"
         )
         await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="back")]]))
     elif data == "back":
@@ -505,50 +505,33 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # -------------------- معالج الروابط --------------------
 async def handle_link(update: Update, context):
-    """معالج الروابط - يتم استدعاؤه عند إرسال المستخدم رابطاً"""
-    # التأكد من أن الرسالة نصية وليست أمر أو callback
     if not update.message or not update.message.text:
         return
-    
     text = update.message.text.strip()
-    
-    # تجاهل الأوامر
     if text.startswith('/'):
         return
-    
-    # التحقق من أن النص يبدو كرابط (يحتوي على http أو https أو www أو .com)
-    if not ('http' in text or 'www' in text or '.com' in text or 'tiktok' in text or 'youtube' in text):
+    # تحقق بسيط: إذا كان النص لا يحتوي على روابط، تجاهل
+    if not any(x in text.lower() for x in ['http', 'www', '.com', 'tiktok', 'youtube', 'facebook', 'twitter', 'instagram', 'kwai']):
         return
     
     uid = update.effective_user.id
     url = text
-    
-    print(f"DEBUG: Link received: {url}")
-    logger.info(f"Link received from {uid}: {url}")
-    
     platform = detect_platform(url)
     
     if platform == "غير معروف":
         await update.message.reply_text(
-            "❌ الرابط غير مدعوم.\n\n"
-            "المنصات المدعومة:\n"
-            "✅ تيك توك\n✅ فيسبوك\n✅ تويتر\n✅ يوتيوب\n✅ انستجرام\n✅ كواي (تجريبي)"
+            "❌ الرابط غير مدعوم.\nالمنصات المدعومة:\n✅ تيك توك\n✅ فيسبوك\n✅ تويتر\n✅ يوتيوب\n✅ انستجرام\n✅ كواي (تجريبي)"
         )
         return
-    
     if platform == "تيك توك صورة":
         await update.message.reply_text("❌ هذا الرابط لصورة وليس فيديو.\nيرجى إرسال رابط فيديو.")
         return
-    
     if not can_download(uid):
         await update.message.reply_text(
-            f"⚠️ استنفدت تحميلات اليوم المجانية!\n"
-            f"📊 استخدمت {get_daily_count(uid)}/{DEFAULT_DAILY_LIMIT}\n\n"
-            "⭐ اشترك في VIP للتحميل غير المحدود"
+            f"⚠️ استنفدت تحميلات اليوم المجانية!\n📊 استخدمت {get_daily_count(uid)}/{DEFAULT_DAILY_LIMIT}\n\n⭐ اشترك في VIP للتحميل غير المحدود"
         )
         return
     
-    # حفظ الرابط والمنصة
     context.user_data["url"] = url
     context.user_data["platform"] = platform
     
@@ -557,15 +540,9 @@ async def handle_link(update: Update, context):
         [InlineKeyboardButton("📱 جودة منخفضة", callback_data="quality_worst")],
         [InlineKeyboardButton("❌ إلغاء", callback_data="cancel")],
     ]
-    
-    await update.message.reply_text(
-        f"📌 **المنصة:** {platform}\n\nاختر جودة التحميل:",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    await update.message.reply_text(f"📌 **المنصة:** {platform}\n\nاختر جودة التحميل:", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def quality_callback(update: Update, context):
-    """معالج اختيار الجودة"""
     query = update.callback_query
     await query.answer()
     uid = query.from_user.id
@@ -574,55 +551,28 @@ async def quality_callback(update: Update, context):
     platform = context.user_data.get("platform", "غير معروف")
     
     if not url:
-        await query.edit_message_text(
-            "⚠️ انتهت صلاحية الرابط، أرسله مرة أخرى.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="back")]])
-        )
+        await query.edit_message_text("⚠️ انتهت صلاحية الرابط، أرسله مرة أخرى.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="back")]]))
         return
-    
     if not can_download(uid):
-        await query.edit_message_text(
-            "⚠️ تجاوزت الحد اليومي للتحميل.\n⭐ اشترك في VIP للاستمرار.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⭐ اشتراك VIP", callback_data="menu_vip")]])
-        )
+        await query.edit_message_text("⚠️ تجاوزت الحد اليومي للتحميل.\n⭐ اشترك في VIP للاستمرار.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⭐ اشتراك VIP", callback_data="menu_vip")]]))
         return
     
     await query.edit_message_text("⏳ جاري التحميل... قد يستغرق بضع ثوانٍ.")
-    
     try:
         file_path = await download_video(url, quality)
-        
         with open(file_path, "rb") as f:
-            await context.bot.send_video(
-                chat_id=uid, 
-                video=f, 
-                caption=f"✅ **تم التحميل بنجاح!**\n\n📌 المنصة: {platform}\n🎥 الجودة: {'عالية' if quality == 'best' else 'منخفضة'}"
-            )
-        
+            await context.bot.send_video(chat_id=uid, video=f, caption=f"✅ **تم التحميل بنجاح!**\n\n📌 المنصة: {platform}\n🎥 الجودة: {'عالية' if quality == 'best' else 'منخفضة'}")
         if os.path.exists(file_path):
             os.remove(file_path)
-        
         if not is_vip(uid):
             increment_daily_count(uid)
-        
         save_download_history(uid, platform)
         await send_promotion(uid, context)
-        
-        await context.bot.send_message(
-            chat_id=uid, 
-            text="🏠 **تم التحميل بنجاح!**\nاختر من القائمة:",
-            parse_mode="Markdown",
-            reply_markup=await main_menu()
-        )
-        
+        await context.bot.send_message(chat_id=uid, text="🏠 **تم التحميل بنجاح!**\nاختر من القائمة:", parse_mode="Markdown", reply_markup=await main_menu())
     except Exception as e:
         error_msg = str(e)[:200]
         logger.error(f"Download error: {e}")
-        await context.bot.send_message(
-            chat_id=uid, 
-            text=f"❌ **فشل التحميل**\n\nالسبب: {error_msg}\n\n"
-                 f"تأكد من:\n• الرابط صحيح\n• الفيديو ليس خاصاً\n\n📞 للدعم: {ADMIN_USERNAME}"
-        )
+        await context.bot.send_message(chat_id=uid, text=f"❌ **فشل التحميل**\n\nالسبب: {error_msg}\n\nتأكد من:\n• الرابط صحيح\n• الفيديو ليس خاصاً\n\n📞 للدعم: {ADMIN_USERNAME}")
     finally:
         context.user_data.pop("url", None)
         context.user_data.pop("platform", None)
@@ -636,10 +586,7 @@ async def successful_payment_callback(update: Update, context):
     payload = update.message.successful_payment.invoice_payload
     days = 30 if "monthly" in payload else 7
     activate_vip(user_id, days)
-    await update.message.reply_text(
-        f"✅ **تم تفعيل اشتراك VIP بنجاح!**\n\n"
-        f"📅 المدة: {days} يوماً\n🚀 تحميل غير محدود\n✨ بدون إعلانات\n\nاستمتع بالتحميل! 🎉"
-    )
+    await update.message.reply_text(f"✅ **تم تفعيل اشتراك VIP بنجاح!**\n\n📅 المدة: {days} يوماً\n🚀 تحميل غير محدود\n✨ بدون إعلانات\n\nاستمتع بالتحميل! 🎉")
 
 # -------------------- أوامر المشرف --------------------
 async def activate_vip_cmd(update: Update, context):
@@ -678,25 +625,25 @@ async def stats(update: Update, context):
 # -------------------- التشغيل --------------------
 def main():
     app = Application.builder().token(TOKEN).build()
-
+    
     # الأوامر
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("activate_vip", activate_vip_cmd))
     app.add_handler(CommandHandler("stats", stats))
-
-    # معالج الأزرار (مع pattern محدد)
-    app.add_handler(CallbackQueryHandler(button_callback, pattern="^(menu_download|menu_usage|menu_vip|menu_referrals|menu_daily_bonus|menu_policy|back|copy_referral|contact_admin|pay_stars_weekly|pay_stars_monthly|cancel|advanced_stats)$"))
+    
+    # معالج الأزرار (بدون pattern جامد، يلتقط كل شيء)
+    app.add_handler(CallbackQueryHandler(button_callback))
     
     # معالج جودة التحميل
     app.add_handler(CallbackQueryHandler(quality_callback, pattern="^quality_"))
-
+    
     # معالجات الدفع
     app.add_handler(PreCheckoutQueryHandler(precheckout_callback))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))
-
-    # معالج الروابط - يأتي أخيراً ليلتقط كل ما لم يلتقطه الآخرون
+    
+    # معالج الروابط
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link))
-
+    
     logger.info(f"✅ البوت يعمل - الإصدار {BOT_VERSION}")
     app.run_polling()
 
